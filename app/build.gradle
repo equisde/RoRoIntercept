@@ -12,39 +12,15 @@ android {
         minSdk 24
         targetSdk 34
         
-        // Auto-increment version based on git commits
+        // Use timestamp-based versioning for consistent increments
         def getVersionCode = { ->
-            try {
-                def stdout = new ByteArrayOutputStream()
-                exec {
-                    commandLine 'git', 'rev-list', '--count', 'HEAD'
-                    standardOutput = stdout
-                    workingDir project.rootDir
-                }
-                return Integer.parseInt(stdout.toString().trim())
-            } catch (Exception e) {
-                println "Warning: Could not get git commit count: ${e.message}"
-                return 1
-            }
+            // Use days since epoch to ensure version code always increases
+            return (System.currentTimeMillis() / (1000 * 60 * 60 * 24)).toInteger()
         }
         
         def getVersionName = { ->
-            try {
-                def stdout = new ByteArrayOutputStream()
-                exec {
-                    commandLine 'git', 'describe', '--tags', '--always', '--dirty'
-                    standardOutput = stdout
-                    workingDir project.rootDir
-                    ignoreExitValue = true
-                }
-                def gitVersion = stdout.toString().trim()
-                if (gitVersion.isEmpty()) {
-                    return "1.0.${getVersionCode()}"
-                }
-                return gitVersion
-            } catch (Exception e) {
-                return "1.0.${getVersionCode()}"
-            }
+            def vCode = getVersionCode()
+            return "1.0.${vCode}"
         }
         
         versionCode getVersionCode()

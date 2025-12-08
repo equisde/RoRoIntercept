@@ -82,7 +82,7 @@ class ProxyServerV2(
     inner class ProxyInitializer : ChannelInitializer<SocketChannel>() {
         override fun initChannel(ch: SocketChannel) {
             ch.pipeline().addLast(
-                HttpServerCodec(),
+                HttpServerCodec(8192, 8192, 8192 * 2),
                 HttpObjectAggregator(10 * 1024 * 1024),
                 ProxyFrontendHandler()
             )
@@ -287,6 +287,8 @@ class ProxyServerV2(
             bootstrap.group(ctx.channel().eventLoop())
                 .channel(NioSocketChannel::class.java)
                 .option(ChannelOption.AUTO_READ, false)
+                .option(ChannelOption.SO_KEEPALIVE, true)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
                 .handler(object : ChannelInitializer<SocketChannel>() {
                     override fun initChannel(ch: SocketChannel) {
                         val isHttps = request.url.startsWith("https")
@@ -298,7 +300,7 @@ class ProxyServerV2(
                             ch.pipeline().addLast(sslContext.newHandler(ch.alloc(), request.host, 443))
                         }
                         
-                        ch.pipeline().addLast(HttpClientCodec())
+                        ch.pipeline().addLast(HttpClientCodec(8192, 8192, 8192 * 2))
                         ch.pipeline().addLast(HttpObjectAggregator(10 * 1024 * 1024))
                         ch.pipeline().addLast(ProxyBackendHandler(ctx, request, matchingRules))
                     }
@@ -319,8 +321,24 @@ class ProxyServerV2(
                     
                     request.headers.let { headers ->
                         for ((key, value) in headers) {
-                            modifiedRequest.headers().set(key, value)
+                            // Filter out problematic headers
+                            when (key.lowercase()) {
+                                "connection", "proxy-connection", "keep-alive",
+                                "proxy-authenticate", "proxy-authorization",
+                                "te", "trailers", "transfer-encoding", "upgrade" -> {
+                                    // Skip proxy-specific and hop-by-hop headers
+                                }
+                                "alt-svc" -> {
+                                    // Skip Alt-Svc to prevent QUIC
+                                }
+                                else -> modifiedRequest.headers().set(key, value)
+                            }
                         }
+                        
+                        // Ensure we don't use HTTP/2 or QUIC
+                        modifiedRequest.headers().set(HttpHeaderNames.CONNECTION, "close")
+                        modifiedRequest.headers().remove("upgrade")
+                        modifiedRequest.headers().remove("http2-settings")
                     }
                     
                     request.body?.let {
@@ -392,8 +410,25 @@ class ProxyServerV2(
             
             response.headers.let { headers ->
                 for ((key, value) in headers) {
-                    clientResponse.headers().set(key, value)
+                    // Filter out problematic headers that cause QUIC/HTTP2 issues
+                    when (key.lowercase()) {
+                        "connection", "proxy-connection", "keep-alive",
+                        "proxy-authenticate", "proxy-authorization",
+                        "te", "trailers", "transfer-encoding", "upgrade" -> {
+                            // Skip proxy-specific and hop-by-hop headers
+                        }
+                        "alt-svc" -> {
+                            // Skip Alt-Svc to prevent QUIC protocol switch
+                        }
+                        "http2-settings", "upgrade-insecure-requests" -> {
+                            // Skip HTTP/2 related headers
+                        }
+                        else -> clientResponse.headers().set(key, value)
+                    }
                 }
+                
+                // Force HTTP/1.1 and close connection
+                clientResponse.headers().set(HttpHeaderNames.CONNECTION, "close")
             }
             
             response.body?.let {
