@@ -22,5 +22,11 @@
         android:id="@+id/action_clear"
         android:title="Limpiar Requests"
         app:showAsAction="never"/>
+    
+    <item
+        android:id="@+id/action_crash_logs"
+        android:title="Ver Crash Logs"
+        android:icon="@android:drawable/ic_menu_report_image"
+        app:showAsAction="never"/>
         
 </menu>

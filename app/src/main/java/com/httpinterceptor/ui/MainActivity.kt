@@ -161,6 +161,10 @@ class MainActivity : AppCompatActivity() {
                 openWebUI()
                 true
             }
+            R.id.action_crash_logs -> {
+                openCrashLogs()
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -216,6 +220,11 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             android.widget.Toast.makeText(this, "No se pudo abrir el navegador", android.widget.Toast.LENGTH_SHORT).show()
         }
+    }
+    
+    private fun openCrashLogs() {
+        val intent = Intent(this, CrashLogsActivity::class.java)
+        startActivity(intent)
     }
     
     override fun onDestroy() {
