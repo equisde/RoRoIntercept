@@ -75,7 +75,7 @@ class ProxyService : Service() {
                 override fun onError(error: String) {
                     Log.e(TAG, "Proxy error: $error")
                 }
-            }, certManager, rulesManager)
+            }, certManager)
             
             proxyServer?.start()
             

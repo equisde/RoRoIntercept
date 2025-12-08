@@ -240,7 +240,7 @@ class SimpleProxyServer(
                 })
             
             val connectFuture = bootstrap.connect(targetHost, targetPort)
-            connectFuture.addListener { future: ChannelFuture ->
+            connectFuture.addListener(ChannelFutureListener { future ->
                 if (future.isSuccess) {
                     val targetChannel = future.channel()
                     
@@ -270,9 +270,9 @@ class SimpleProxyServer(
                     }
                     
                     Log.d(TAG, "🔄 Forward: ${targetRequest.method()} $targetHost$path")
-                    targetChannel.writeAndFlush(targetRequest).addListener {
+                    targetChannel.writeAndFlush(targetRequest).addListener(ChannelFutureListener {
                         targetChannel.read()
-                    }
+                    })
                     clientRequest.release()
                     
                 } else {
@@ -280,7 +280,7 @@ class SimpleProxyServer(
                     sendErrorResponse(clientCtx, HttpResponseStatus.BAD_GATEWAY, "Cannot connect to target")
                     clientRequest.release()
                 }
-            }
+            })
         }
         
         private fun sendErrorResponse(ctx: ChannelHandlerContext, status: HttpResponseStatus, message: String) {
