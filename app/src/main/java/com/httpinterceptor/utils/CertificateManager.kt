@@ -27,7 +27,9 @@ class CertificateManager(private val context: Context) {
     private val caPrivateKey: PrivateKey
     
     init {
-        Security.addProvider(BouncyCastleProvider())
+        // Remove and re-add BC provider to ensure it's properly initialized
+        Security.removeProvider("BC")
+        Security.insertProviderAt(BouncyCastleProvider(), 1)
         
         val certDir = File(context.filesDir, "certs")
         if (!certDir.exists()) certDir.mkdirs()
@@ -83,13 +85,11 @@ class CertificateManager(private val context: Context) {
             keyPair.public
         )
         
-        val signer = JcaContentSignerBuilder("SHA256WithRSA")
-            .setProvider("BC")
+        val signer = JcaContentSignerBuilder("SHA256withRSA")
             .build(keyPair.private)
         
         val certHolder = certBuilder.build(signer)
         val cert = JcaX509CertificateConverter()
-            .setProvider("BC")
             .getCertificate(certHolder)
         
         return Pair(cert, keyPair.private)
@@ -131,13 +131,11 @@ class CertificateManager(private val context: Context) {
         ))
         certBuilder.addExtension(Extension.subjectAlternativeName, false, san)
         
-        val signer = JcaContentSignerBuilder("SHA256WithRSA")
-            .setProvider("BC")
+        val signer = JcaContentSignerBuilder("SHA256withRSA")
             .build(caPrivateKey)
         
         val certHolder = certBuilder.build(signer)
         val cert = JcaX509CertificateConverter()
-            .setProvider("BC")
             .getCertificate(certHolder)
         
         // Cache the certificate
