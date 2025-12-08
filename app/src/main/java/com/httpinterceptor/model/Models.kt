@@ -57,7 +57,21 @@ enum class RuleAction {
 }
 
 data class ModifyAction(
-    val modifyHeaders: Map<String, String>? = null,
-    val modifyBody: String? = null,
-    val replaceBody: String? = null
+    // Headers modification
+    val modifyHeaders: Map<String, String>? = null, // Add/Replace headers
+    val removeHeaders: List<String>? = null,         // Remove specific headers
+    val searchReplaceHeaders: List<SearchReplace>? = null, // Find & replace in headers
+    
+    // Body modification
+    val modifyBody: String? = null,                  // Regex to remove from body
+    val replaceBody: String? = null,                 // Complete body replacement
+    val searchReplaceBody: List<SearchReplace>? = null  // Find & replace in body
+)
+
+data class SearchReplace(
+    val search: String,           // Text or regex pattern to find
+    val replace: String,          // Replacement text
+    val useRegex: Boolean = false, // Use regex for search
+    val caseSensitive: Boolean = true, // Case sensitive matching
+    val replaceAll: Boolean = true     // Replace all occurrences or just first
 )

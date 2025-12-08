@@ -200,13 +200,43 @@ class ProxyServerV2(
         
         private fun applyRequestModifications(request: HttpRequest, modifyAction: ModifyAction): HttpRequest {
             val newHeaders = request.headers.toMutableMap()
+            
+            // Add/Replace headers
             modifyAction.modifyHeaders?.forEach { (key, value) ->
                 newHeaders[key] = value
             }
             
+            // Remove specific headers
+            modifyAction.removeHeaders?.forEach { headerName ->
+                newHeaders.remove(headerName)
+            }
+            
+            // Search & Replace in headers
+            modifyAction.searchReplaceHeaders?.forEach { sr ->
+                newHeaders.entries.forEach { entry ->
+                    val newValue = applySearchReplace(entry.value, sr)
+                    if (newValue != entry.value) {
+                        newHeaders[entry.key] = newValue
+                    }
+                }
+            }
+            
+            // Process body modifications
             val newBody = when {
-                modifyAction.replaceBody != null -> modifyAction.replaceBody.toByteArray()
+                modifyAction.replaceBody != null -> {
+                    // Complete replacement
+                    modifyAction.replaceBody.toByteArray()
+                }
+                modifyAction.searchReplaceBody != null && request.body != null -> {
+                    // Search & Replace in body
+                    var bodyText = request.body.toString(Charsets.UTF_8)
+                    modifyAction.searchReplaceBody.forEach { sr ->
+                        bodyText = applySearchReplace(bodyText, sr)
+                    }
+                    bodyText.toByteArray()
+                }
                 modifyAction.modifyBody != null && request.body != null -> {
+                    // Legacy: Remove by regex
                     val originalBody = request.body.toString(Charsets.UTF_8)
                     originalBody.replace(Regex(modifyAction.modifyBody), "").toByteArray()
                 }
@@ -214,6 +244,26 @@ class ProxyServerV2(
             }
             
             return request.copy(headers = newHeaders, body = newBody)
+        }
+        
+        private fun applySearchReplace(text: String, sr: SearchReplace): String {
+            return if (sr.useRegex) {
+                // Use regex
+                val options = if (sr.caseSensitive) setOf<RegexOption>() else setOf(RegexOption.IGNORE_CASE)
+                val regex = Regex(sr.search, options)
+                if (sr.replaceAll) {
+                    regex.replace(text, sr.replace)
+                } else {
+                    regex.replaceFirst(text, sr.replace)
+                }
+            } else {
+                // Simple text replacement
+                if (sr.replaceAll) {
+                    text.replace(sr.search, sr.replace, ignoreCase = !sr.caseSensitive)
+                } else {
+                    text.replaceFirst(sr.search, sr.replace, ignoreCase = !sr.caseSensitive)
+                }
+            }
         }
         
         private fun forwardRequest(
@@ -339,13 +389,43 @@ class ProxyServerV2(
         
         private fun applyResponseModifications(response: HttpResponse, modifyAction: ModifyAction): HttpResponse {
             val newHeaders = response.headers.toMutableMap()
+            
+            // Add/Replace headers
             modifyAction.modifyHeaders?.forEach { (key, value) ->
                 newHeaders[key] = value
             }
             
+            // Remove specific headers
+            modifyAction.removeHeaders?.forEach { headerName ->
+                newHeaders.remove(headerName)
+            }
+            
+            // Search & Replace in headers
+            modifyAction.searchReplaceHeaders?.forEach { sr ->
+                newHeaders.entries.forEach { entry ->
+                    val newValue = applySearchReplace(entry.value, sr)
+                    if (newValue != entry.value) {
+                        newHeaders[entry.key] = newValue
+                    }
+                }
+            }
+            
+            // Process body modifications
             val newBody = when {
-                modifyAction.replaceBody != null -> modifyAction.replaceBody.toByteArray()
+                modifyAction.replaceBody != null -> {
+                    // Complete replacement
+                    modifyAction.replaceBody.toByteArray()
+                }
+                modifyAction.searchReplaceBody != null && response.body != null -> {
+                    // Search & Replace in body
+                    var bodyText = response.body.toString(Charsets.UTF_8)
+                    modifyAction.searchReplaceBody.forEach { sr ->
+                        bodyText = applySearchReplace(bodyText, sr)
+                    }
+                    bodyText.toByteArray()
+                }
                 modifyAction.modifyBody != null && response.body != null -> {
+                    // Legacy: Remove by regex
                     val originalBody = response.body.toString(Charsets.UTF_8)
                     originalBody.replace(Regex(modifyAction.modifyBody), "").toByteArray()
                 }
