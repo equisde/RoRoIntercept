@@ -153,6 +153,7 @@ class ProxyServer(private val port: Int, private val listener: ProxyListener) {
         private suspend fun forwardRequest(request: com.httpinterceptor.model.HttpRequest): com.httpinterceptor.model.HttpResponse {
             // Simplified - real implementation would use HttpClient
             return com.httpinterceptor.model.HttpResponse(
+                requestId = request.id,
                 statusCode = 200,
                 statusMessage = "OK",
                 headers = mapOf("Content-Type" to "text/plain"),

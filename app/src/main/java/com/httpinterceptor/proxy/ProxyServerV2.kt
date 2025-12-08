@@ -305,9 +305,10 @@ class ProxyServerV2(
                         }
                     })
                 
-                bootstrap.connect(targetHost, targetPort).addListener(GenericFutureListener { future: ChannelFuture ->
-                    if (future.isSuccess) {
-                        val outboundCh = future.channel()
+                bootstrap.connect(targetHost, targetPort).addListener { future ->
+                    val channelFuture = future as ChannelFuture
+                    if (channelFuture.isSuccess) {
+                        val outboundCh = channelFuture.channel()
                         
                         // Build outbound request
                         val path = if (uri.rawPath.isNullOrEmpty()) "/" else uri.rawPath +
@@ -343,7 +344,7 @@ class ProxyServerV2(
                         outboundCh.writeAndFlush(outboundRequest)
                         
                     } else {
-                        Log.e(TAG, "Failed to connect to $targetHost:$targetPort", future.cause())
+                        Log.e(TAG, "Failed to connect to $targetHost:$targetPort", channelFuture.cause())
                         val errorResponse = DefaultFullHttpResponse(
                             HttpVersion.HTTP_1_1,
                             HttpResponseStatus.BAD_GATEWAY,
@@ -351,8 +352,8 @@ class ProxyServerV2(
                         )
                         errorResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, errorResponse.content().readableBytes())
                         ctx.writeAndFlush(errorResponse).addListener(ChannelFutureListener.CLOSE)
+                        ReferenceCountUtil.release(originalMsg)
                     }
-                    ReferenceCountUtil.release(originalMsg)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error forwarding request", e)
