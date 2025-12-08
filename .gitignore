@@ -87,14 +87,18 @@ Thumbs.db
 *.swp
 *.bak
 
-# Keystore (KEEP SECRET)
-# For production: DO NOT commit keystore files
+# Keystore (KEEP SECRET - DO NOT COMMIT)
 # Use GitHub Secrets instead
-# *.keystore
-# *.jks
-# keystore.properties
+*.keystore
+*.jks
+keystore.properties
 
 # Keystore files - DO NOT COMMIT
 keystore.properties
 keystore.b64
 *.keystore.backup
+
+# Keystore backup files
+keystore.b64
+*.keystore.backup
+roro-keystore-backup.keystore
