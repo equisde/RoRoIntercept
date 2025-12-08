@@ -308,36 +308,11 @@ class WebServerUI(
                     </select>
                 </div>
                 <div class="form-group" id="modifySection">
-                    <h4 style="color: #667eea; margin-top: 20px;">Modificación de Headers</h4>
+                    <label>Headers a Modificar (JSON)</label>
+                    <textarea id="ruleHeaders" placeholder='{"Authorization": "Bearer NEW_TOKEN"}'></textarea>
                     
-                    <label>Headers a Agregar/Modificar (JSON)</label>
-                    <textarea id="ruleHeaders" placeholder='{"Authorization": "Bearer NEW_TOKEN", "X-Custom": "value"}'></textarea>
-                    
-                    <label style="margin-top: 10px;">Headers a Eliminar (separados por coma)</label>
-                    <input type="text" id="removeHeaders" placeholder="X-Powered-By, Server, X-Frame-Options">
-                    
-                    <label style="margin-top: 10px;">Buscar y Reemplazar en Headers (JSON Array)</label>
-                    <textarea id="searchReplaceHeaders" rows="3" placeholder='[{"search": "old-value", "replace": "new-value", "useRegex": false}]'></textarea>
-                    
-                    <h4 style="color: #667eea; margin-top: 20px;">Modificación de Body</h4>
-                    
-                    <label>Body de Reemplazo Completo (opcional)</label>
-                    <textarea id="ruleBody" placeholder='{"modified": true, "premium": true}'></textarea>
-                    
-                    <label style="margin-top: 10px;">Buscar y Reemplazar en Body (JSON Array)</label>
-                    <textarea id="searchReplaceBody" rows="4" placeholder='[
-  {"search": "false", "replace": "true", "useRegex": false},
-  {"search": "\\d+", "replace": "9999", "useRegex": true}
-]'></textarea>
-                    
-                    <div style="background: #f0f9ff; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 12px;">
-                        <strong>💡 Opciones de Búsqueda/Reemplazo:</strong><br>
-                        • <code>search</code>: Texto o regex a buscar<br>
-                        • <code>replace</code>: Texto de reemplazo<br>
-                        • <code>useRegex</code>: true para usar regex (default: false)<br>
-                        • <code>caseSensitive</code>: Distinguir mayúsculas (default: true)<br>
-                        • <code>replaceAll</code>: Reemplazar todas las ocurrencias (default: true)
-                    </div>
+                    <label style="margin-top: 10px;">Body de Reemplazo (opcional)</label>
+                    <textarea id="ruleBody" placeholder='{"modified": true}'></textarea>
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 20px;">
                     <button type="submit" class="btn btn-success" style="flex: 1;">Crear Regla</button>
@@ -473,7 +448,6 @@ class WebServerUI(
             
             const modifyRequest = {};
             
-            // Parse headers modifications
             if (headers) {
                 try {
                     modifyRequest.modifyHeaders = JSON.parse(headers);
@@ -483,32 +457,28 @@ class WebServerUI(
                 }
             }
             
-            // Parse remove headers
             if (removeHeaders) {
                 modifyRequest.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h);
             }
             
-            // Parse search/replace headers
             if (searchReplaceHeaders) {
                 try {
                     modifyRequest.searchReplaceHeaders = JSON.parse(searchReplaceHeaders);
                 } catch (e) {
-                    alert('Error en formato JSON de buscar/reemplazar headers: ' + e.message);
+                    alert('Error en JSON de buscar/reemplazar headers: ' + e.message);
                     return;
                 }
             }
             
-            // Parse body replacement
             if (body) {
                 modifyRequest.replaceBody = body;
             }
             
-            // Parse search/replace body
             if (searchReplaceBody) {
                 try {
                     modifyRequest.searchReplaceBody = JSON.parse(searchReplaceBody);
                 } catch (e) {
-                    alert('Error en formato JSON de buscar/reemplazar body: ' + e.message);
+                    alert('Error en JSON de buscar/reemplazar body: ' + e.message);
                     return;
                 }
             }
