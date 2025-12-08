@@ -22,11 +22,13 @@ data class HttpRequest(
 }
 
 data class HttpResponse(
+    val requestId: Long,
     val statusCode: Int,
     val statusMessage: String,
     val headers: Map<String, String>,
     val body: ByteArray?,
-    val timestamp: Long
+    val timestamp: Long,
+    var modified: Boolean = false
 ) {
     fun getHeadersString(): String {
         return headers.entries.joinToString("\n") { "${it.key}: ${it.value}" }

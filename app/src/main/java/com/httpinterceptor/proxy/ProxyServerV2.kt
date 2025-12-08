@@ -305,7 +305,7 @@ class ProxyServerV2(
                         }
                     })
                 
-                bootstrap.connect(targetHost, targetPort).addListener { future: ChannelFuture ->
+                bootstrap.connect(targetHost, targetPort).addListener(GenericFutureListener { future: ChannelFuture ->
                     if (future.isSuccess) {
                         val outboundCh = future.channel()
                         
@@ -447,8 +447,8 @@ class ProxyServerV2(
                 for (rule in matchingRules) {
                     if (rule.action == RuleAction.MODIFY) {
                         rule.modifyResponse?.let { modifyAction ->
-                            response = applyResponseModifications(response, modifyAction)
-                            response.modified = true
+                            val modifiedResponse = applyResponseModifications(response, modifyAction)
+                            response = modifiedResponse.copy(modified = true)
                         }
                     }
                 }
