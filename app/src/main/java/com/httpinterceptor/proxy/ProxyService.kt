@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 class ProxyService : Service() {
     
     private val binder = LocalBinder()
-    private var proxyServer: ProxyServerV2? = null
+    private var proxyServer: SimpleProxyServer? = null
     private var webServer: WebServerUI? = null
     private val listeners = CopyOnWriteArrayList<ProxyServiceListener>()
     private val requests = mutableListOf<HttpRequest>()
@@ -53,7 +53,7 @@ class ProxyService : Service() {
         startForeground(NOTIFICATION_ID, createNotification("Iniciando proxy en puerto $port..."))
         
         try {
-            proxyServer = ProxyServerV2(port, object : ProxyServerV2.ProxyListener {
+            proxyServer = SimpleProxyServer(port, object : SimpleProxyServer.ProxyListener {
                 override fun onRequestReceived(request: HttpRequest) {
                     synchronized(requests) {
                         requests.add(0, request)
