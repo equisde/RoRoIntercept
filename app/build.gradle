@@ -23,23 +23,17 @@ android {
     }
 
     signingConfigs {
+        debug {
+            // Debug builds use default Android debug keystore
+            // This ensures consistent debug signatures
+        }
         release {
-            // Load keystore config from properties file or environment
-            def keystorePropertiesFile = rootProject.file("keystore.properties")
-            def keystoreProperties = new Properties()
-            
-            if (keystorePropertiesFile.exists()) {
-                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
-                storeFile file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-            } else {
-                // Fallback to environment variables (for CI/CD)
-                storeFile file('roro-release.keystore')
-                storePassword System.getenv("KEYSTORE_PASSWORD") ?: "RoRoDevs2024!"
-                keyAlias System.getenv("KEY_ALIAS") ?: "roro-key"
-                keyPassword System.getenv("KEY_PASSWORD") ?: "RoRoDevs2024!"
+            // Release signing only works in CI/CD with GitHub Secrets
+            if (System.getenv("KEYSTORE_FILE") != null) {
+                storeFile file(System.getenv("KEYSTORE_FILE"))
+                storePassword System.getenv("KEYSTORE_PASSWORD")
+                keyAlias System.getenv("KEY_ALIAS")
+                keyPassword System.getenv("KEY_PASSWORD")
             }
         }
     }

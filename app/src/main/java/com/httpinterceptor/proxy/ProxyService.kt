@@ -49,43 +49,56 @@ class ProxyService : Service() {
     fun startProxy(port: Int = 2580) {
         if (proxyServer != null) return
         
-        proxyServer = ProxyServerV2(port, object : ProxyServerV2.ProxyListener {
-            override fun onRequestReceived(request: HttpRequest) {
-                synchronized(requests) {
-                    requests.add(0, request)
-                    if (requests.size > 1000) {
-                        requests.removeAt(requests.size - 1)
-                    }
-                }
-                listeners.forEach { it.onRequestReceived(request) }
-            }
-            
-            override fun onResponseReceived(requestId: Long, response: HttpResponse) {
-                synchronized(requests) {
-                    val request = requests.find { it.id == requestId }
-                    request?.response = response
-                }
-                listeners.forEach { it.onResponseReceived(requestId, response) }
-            }
-            
-            override fun onError(error: String) {
-                Log.e(TAG, "Proxy error: $error")
-            }
-        }, certManager, rulesManager)
+        // Start foreground first to avoid crash
+        startForeground(NOTIFICATION_ID, createNotification("Iniciando proxy en puerto $port..."))
         
-        proxyServer?.start()
-        
-        // Start Web UI
-        webServer = WebServerUI(8080, this)
         try {
-            webServer?.start()
-            Log.d(TAG, "Web UI started on port 8080")
+            proxyServer = ProxyServerV2(port, object : ProxyServerV2.ProxyListener {
+                override fun onRequestReceived(request: HttpRequest) {
+                    synchronized(requests) {
+                        requests.add(0, request)
+                        if (requests.size > 1000) {
+                            requests.removeAt(requests.size - 1)
+                        }
+                    }
+                    listeners.forEach { it.onRequestReceived(request) }
+                }
+                
+                override fun onResponseReceived(requestId: Long, response: HttpResponse) {
+                    synchronized(requests) {
+                        val request = requests.find { it.id == requestId }
+                        request?.response = response
+                    }
+                    listeners.forEach { it.onResponseReceived(requestId, response) }
+                }
+                
+                override fun onError(error: String) {
+                    Log.e(TAG, "Proxy error: $error")
+                }
+            }, certManager, rulesManager)
+            
+            proxyServer?.start()
+            
+            // Start Web UI
+            webServer = WebServerUI(8080, this)
+            try {
+                webServer?.start()
+                Log.d(TAG, "Web UI started on port 8080")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start Web UI", e)
+            }
+            
+            // Update notification with running status
+            val notification = createNotification("Proxy: 0.0.0.0:$port | Web UI: http://localhost:8080")
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager?.notify(NOTIFICATION_ID, notification)
+            
+            listeners.forEach { it.onProxyStateChanged(true) }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start Web UI", e)
+            Log.e(TAG, "Failed to start proxy", e)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            throw e
         }
-        
-        startForeground(NOTIFICATION_ID, createNotification("Proxy: 0.0.0.0:$port | Web UI: http://localhost:8080"))
-        listeners.forEach { it.onProxyStateChanged(true) }
     }
     
     fun stopProxy() {

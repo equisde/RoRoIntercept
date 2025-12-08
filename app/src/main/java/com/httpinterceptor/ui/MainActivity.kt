@@ -1,16 +1,26 @@
 package com.httpinterceptor.ui
 
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.net.wifi.WifiManager
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.IBinder
+import android.provider.Settings
 import android.text.format.Formatter
 import android.view.Menu
 import android.view.MenuItem
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
@@ -24,12 +34,51 @@ class MainActivity : AppCompatActivity() {
     
     private var proxyService: ProxyService? = null
     private var bound = false
+    private var pendingProxyStart = false
     
     private lateinit var btnStartStop: MaterialButton
     private lateinit var tvStatus: MaterialTextView
     private lateinit var tvProxyInfo: MaterialTextView
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: RequestAdapter
+    
+    // Permission launchers
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted && pendingProxyStart) {
+            checkStoragePermissionsAndStart()
+        } else if (!isGranted) {
+            showPermissionDeniedDialog("Notificaciones")
+        }
+    }
+    
+    private val storagePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.values.all { it }
+        if (allGranted && pendingProxyStart) {
+            actuallyStartProxy()
+        } else if (!allGranted) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                showManageStorageDialog()
+            } else {
+                showPermissionDeniedDialog("Almacenamiento")
+            }
+        }
+    }
+    
+    private val manageStorageLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager() && pendingProxyStart) {
+                actuallyStartProxy()
+            } else if (!Environment.isExternalStorageManager()) {
+                showPermissionDeniedDialog("Administrar almacenamiento")
+            }
+        }
+    }
     
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -93,16 +142,159 @@ class MainActivity : AppCompatActivity() {
         
         val intent = Intent(this, ProxyService::class.java)
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
+        
+        // Check permissions on first launch
+        checkInitialPermissions()
+    }
+    
+    private fun checkInitialPermissions() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                // Show rationale if needed
+                if (ActivityCompat.shouldShowRequestPermissionRationale(
+                        this,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    )
+                ) {
+                    AlertDialog.Builder(this)
+                        .setTitle("Permiso necesario")
+                        .setMessage("RoRo Interceptor necesita permiso de notificaciones para mantener el proxy activo en segundo plano.")
+                        .setPositiveButton("Aceptar") { _, _ ->
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                        .setNegativeButton("Cancelar", null)
+                        .show()
+                }
+            }
+        }
     }
     
     private fun toggleProxy() {
         proxyService?.let { service ->
             if (service.isProxyRunning()) {
                 service.stopProxy()
+                pendingProxyStart = false
             } else {
-                service.startProxy(2580)
-                updateProxyInfo()
+                pendingProxyStart = true
+                checkPermissionsAndStartProxy()
             }
+        }
+    }
+    
+    private fun checkPermissionsAndStartProxy() {
+        // Check notification permission (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+        
+        checkStoragePermissionsAndStart()
+    }
+    
+    private fun checkStoragePermissionsAndStart() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ - Check media permissions
+            val permissionsToRequest = mutableListOf<String>()
+            
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.READ_MEDIA_IMAGES
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
+            }
+            
+            if (permissionsToRequest.isNotEmpty()) {
+                storagePermissionLauncher.launch(permissionsToRequest.toTypedArray())
+                return
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11-12 - Check if has manage storage
+            if (!Environment.isExternalStorageManager()) {
+                showManageStorageDialog()
+                return
+            }
+        } else {
+            // Android 10 and below
+            val permissionsToRequest = mutableListOf<String>()
+            
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            }
+            
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.READ_EXTERNAL_STORAGE
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            }
+            
+            if (permissionsToRequest.isNotEmpty()) {
+                storagePermissionLauncher.launch(permissionsToRequest.toTypedArray())
+                return
+            }
+        }
+        
+        actuallyStartProxy()
+    }
+    
+    private fun showManageStorageDialog() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            AlertDialog.Builder(this)
+                .setTitle("Permiso de almacenamiento")
+                .setMessage("RoRo Interceptor necesita acceso completo al almacenamiento para guardar certificados y logs.\n\nPor favor, habilita 'Permitir administración de todos los archivos' en la siguiente pantalla.")
+                .setPositiveButton("Configurar") { _, _ ->
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        intent.data = Uri.parse("package:$packageName")
+                        manageStorageLauncher.launch(intent)
+                    } catch (e: Exception) {
+                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        manageStorageLauncher.launch(intent)
+                    }
+                }
+                .setNegativeButton("Cancelar") { _, _ ->
+                    pendingProxyStart = false
+                }
+                .show()
+        }
+    }
+    
+    private fun showPermissionDeniedDialog(permissionName: String) {
+        AlertDialog.Builder(this)
+            .setTitle("Permiso denegado")
+            .setMessage("El permiso de $permissionName es necesario para que RoRo Interceptor funcione correctamente.\n\nPuedes habilitarlo manualmente en Ajustes > Aplicaciones > RoRo Interceptor > Permisos")
+            .setPositiveButton("Ir a Ajustes") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                intent.data = Uri.parse("package:$packageName")
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancelar") { _, _ ->
+                pendingProxyStart = false
+            }
+            .show()
+    }
+    
+    private fun actuallyStartProxy() {
+        proxyService?.let { service ->
+            service.startProxy(2580)
+            updateProxyInfo()
+            pendingProxyStart = false
         }
     }
     
