@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    
+    <item
+        android:id="@+id/action_web_ui"
+        android:title="Abrir Web UI"
+        android:icon="@android:drawable/ic_menu_view"
+        app:showAsAction="ifRoom"/>
+    
+    <item
+        android:id="@+id/action_export_cert"
+        android:title="Exportar Certificado CA"
+        app:showAsAction="never"/>
+    
+    <item
+        android:id="@+id/action_rules"
+        android:title="Reglas de Modificación"
+        app:showAsAction="never"/>
+    
+    <item
+        android:id="@+id/action_clear"
+        android:title="Limpiar Requests"
+        app:showAsAction="never"/>
+        
+</menu>

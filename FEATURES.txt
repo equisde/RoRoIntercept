@@ -1,0 +1,389 @@
+╔══════════════════════════════════════════════════════════════════╗
+║         HTTP INTERCEPTOR PRO - RESUMEN EJECUTIVO                 ║
+╚══════════════════════════════════════════════════════════════════╝
+
+📱 APLICACIÓN ANDROID COMPLETA PARA INTERCEPTAR HTTPS
+   Tipo: Fiddler Everywhere para Android
+   Puerto Proxy: 2580 (conexiones externas 0.0.0.0)
+   Puerto Web UI: 8080
+   Líneas de código: ~2250
+
+═══════════════════════════════════════════════════════════════════
+
+✅ CARACTERÍSTICAS IMPLEMENTADAS
+
+1. PROXY HTTPS COMPLETO
+   ├─ Servidor Netty en puerto 2580
+   ├─ Acepta conexiones externas (0.0.0.0)
+   ├─ Interceptación MITM de HTTP/HTTPS
+   ├─ Manejo de CONNECT tunneling
+   └─ Reenvío de requests al servidor real
+
+2. GENERACIÓN DE CERTIFICADOS SSL
+   ├─ CA Root Certificate automático (BouncyCastle)
+   ├─ Certificados por hostname con SAN
+   ├─ Exportación de CA en formato .crt instalable
+   ├─ Cache de certificados generados
+   └─ KeyStore persistente
+
+3. SISTEMA DE REGLAS DE MODIFICACIÓN
+   ├─ Crear/Editar/Eliminar reglas
+   ├─ 5 tipos de match:
+   │  ├─ Contains (contiene texto)
+   │  ├─ Exact (coincidencia exacta)
+   │  ├─ Starts With (empieza con)
+   │  ├─ Ends With (termina con)
+   │  └─ RegEx (expresión regular)
+   ├─ 3 acciones:
+   │  ├─ MODIFY (modificar headers/body)
+   │  ├─ BLOCK (retorna 403 Forbidden)
+   │  └─ ALLOW (solo registrar)
+   ├─ Modificación de REQUEST:
+   │  ├─ Headers (agregar/modificar/eliminar)
+   │  └─ Body (reemplazo completo)
+   ├─ Modificación de RESPONSE:
+   │  ├─ Headers
+   │  └─ Body
+   └─ Persistencia en JSON
+
+4. INTERFAZ WEB MODERNA (Puerto 8080)
+   ├─ Dashboard HTML5 con CSS moderno
+   ├─ Visualización en tiempo real de requests
+   ├─ Auto-refresh cada 2 segundos
+   ├─ Panel de reglas con CRUD completo
+   ├─ Detalles de request/response:
+   │  ├─ Método HTTP con colores
+   │  ├─ URL completa
+   │  ├─ Código de estado
+   │  ├─ Headers JSON
+   │  ├─ Body (texto/JSON)
+   │  └─ Timestamp
+   ├─ Modal para crear reglas
+   ├─ Indicador de requests modificados
+   └─ Diseño responsive
+
+5. APLICACIÓN ANDROID NATIVA
+   ├─ MainActivity con RecyclerView
+   ├─ Lista de requests en tiempo real
+   ├─ Botón Start/Stop Proxy
+   ├─ Información de IP y puertos
+   ├─ Menú con opciones:
+   │  ├─ Exportar Certificado CA
+   │  ├─ Abrir Web UI
+   │  ├─ Limpiar Requests
+   │  └─ Gestión de Reglas
+   ├─ Service en foreground
+   ├─ Notificación persistente
+   └─ Material Design 3
+
+═══════════════════════════════════════════════════════════════════
+
+🔧 ARQUITECTURA TÉCNICA
+
+┌─────────────────────────────────────────────────────────────┐
+│                    ANDROID APP (UI)                         │
+│  MainActivity.kt - RecyclerView - RequestAdapter           │
+└──────────────────────┬──────────────────────────────────────┘
+                       │ Service Binding
+┌──────────────────────▼──────────────────────────────────────┐
+│                  PROXY SERVICE (Core)                       │
+│  - Gestión de lifecycle                                    │
+│  - Storage thread-safe de requests                         │
+│  - Listeners para updates en tiempo real                   │
+│  - Coordinación de proxy + web server                      │
+└──────────┬────────────────────────────┬─────────────────────┘
+           │                            │
+┌──────────▼─────────────┐   ┌─────────▼──────────────────────┐
+│   ProxyServerV2        │   │      WebServerUI               │
+│   (Netty Framework)    │   │      (NanoHTTPD)               │
+│                        │   │                                │
+│ - Port: 2580           │   │ - Port: 8080                   │
+│ - EventLoopGroups      │   │ - REST API:                    │
+│ - SSL Handlers         │   │   /api/requests                │
+│ - Frontend Handler     │   │   /api/rules (GET/POST/DELETE) │
+│ - Backend Handler      │   │   /api/clear                   │
+│ - Certificate Gen      │   │ - HTML Dashboard               │
+│ - Request Forwarding   │   │ - JavaScript auto-refresh      │
+└────────────┬───────────┘   └────────────────────────────────┘
+             │
+┌────────────▼────────────────────────────────────────────────┐
+│                    UTILITIES LAYER                          │
+│                                                             │
+│  CertificateManager.kt          RulesManager.kt            │
+│  ├─ KeyStore management         ├─ JSON persistence        │
+│  ├─ CA generation               ├─ CRUD operations         │
+│  ├─ Server cert generation      ├─ Pattern matching        │
+│  └─ Export to .crt              └─ Rule filtering          │
+└─────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+
+🔄 FLUJO DE INTERCEPTACIÓN HTTPS
+
+1. Cliente → CONNECT api.example.com:443 → Proxy (2580)
+
+2. Proxy → 200 Connection Established → Cliente
+
+3. Proxy genera certificado SSL para "api.example.com"
+   └─ CertificateManager.generateServerCertificate()
+
+4. Proxy → SSL Handshake → Cliente
+   └─ Cliente acepta certificado (si CA instalada)
+
+5. Cliente → HTTPS Request (descifrado) → Proxy
+   └─ Request ahora es legible
+
+6. RulesManager busca reglas para "api.example.com"
+   └─ findMatchingRules(url)
+
+7. Si regla BLOCK: → retorna 403 Forbidden → Cliente
+   Si regla MODIFY:
+      ├─ Modifica request headers
+      ├─ Modifica/reemplaza request body
+      └─ request.modified = true
+
+8. Proxy → Request Modificado → Servidor Real
+   └─ Via Bootstrap + NioSocketChannel
+
+9. Servidor Real → Response → Proxy
+
+10. Aplica reglas de modificación a response
+    ├─ Modifica response headers
+    └─ Modifica/reemplaza response body
+
+11. Proxy → Response Modificada → Cliente
+
+12. Request + Response → Storage (ConcurrentHashMap)
+
+13. ProxyService → notifica listeners
+
+14. WebUI → recibe update → refresh automático (2s)
+
+═══════════════════════════════════════════════════════════════════
+
+📦 ARCHIVOS DEL PROYECTO
+
+HTTPInterceptor/
+├── app/
+│   ├── build.gradle (dependencias)
+│   ├── proguard-rules.pro
+│   └── src/main/
+│       ├── AndroidManifest.xml
+│       ├── java/com/httpinterceptor/
+│       │   ├── model/
+│       │   │   └── Models.kt ← Data classes
+│       │   ├── proxy/
+│       │   │   ├── ProxyServer.kt (v1 - básico)
+│       │   │   ├── ProxyServerV2.kt ← Implementación completa
+│       │   │   ├── ProxyService.kt ← Core service
+│       │   │   └── WebServerUI.kt ← Dashboard web
+│       │   ├── ui/
+│       │   │   ├── MainActivity.kt ← Activity principal
+│       │   │   ├── RequestAdapter.kt ← RecyclerView
+│       │   │   └── RequestDetailActivity.kt
+│       │   └── utils/
+│       │       ├── CertificateManager.kt ← SSL/TLS
+│       │       └── RulesManager.kt ← Gestión reglas
+│       └── res/
+│           ├── layout/
+│           │   ├── activity_main.xml
+│           │   ├── activity_request_detail.xml
+│           │   └── item_request.xml
+│           ├── values/
+│           │   ├── strings.xml
+│           │   └── themes.xml
+│           ├── menu/
+│           │   └── main_menu.xml
+│           ├── xml/
+│           │   └── network_security_config.xml
+│           └── drawable/
+│               └── ic_launcher.xml
+├── build.gradle (project)
+├── settings.gradle
+├── build.sh ← Script de compilación
+├── README.md ← Documentación completa
+└── QUICKSTART.md ← Guía rápida
+
+Total: 10 archivos Kotlin, 9 archivos XML, ~2250 líneas
+
+═══════════════════════════════════════════════════════════════════
+
+🚀 EJEMPLOS DE USO
+
+1. MODIFICAR TOKEN DE API
+   ────────────────────────────────────────
+   Nombre: Change Auth Token
+   Patrón: api.myapp.com
+   Match: Contains
+   Acción: Modificar
+   Headers:
+   {
+     "Authorization": "Bearer eyJhbGc...NEW_TOKEN"
+   }
+
+2. BLOQUEAR TRACKERS
+   ────────────────────────────────────────
+   Nombre: Block Google Analytics
+   Patrón: google-analytics.com
+   Match: Contains
+   Acción: Bloquear
+
+3. MOCK RESPONSE DE USUARIO PREMIUM
+   ────────────────────────────────────────
+   Nombre: Premium User
+   Patrón: /api/user/profile
+   Match: Ends With
+   Acción: Modificar
+   Body:
+   {
+     "username": "hacker",
+     "email": "test@test.com",
+     "premium": true,
+     "credits": 9999,
+     "role": "admin"
+   }
+
+4. AGREGAR CORS HEADERS
+   ────────────────────────────────────────
+   Nombre: Fix CORS
+   Patrón: api.example.com
+   Match: Contains
+   Acción: Modificar
+   Headers:
+   {
+     "Access-Control-Allow-Origin": "*",
+     "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE",
+     "Access-Control-Allow-Headers": "*"
+   }
+
+5. BYPASS RATE LIMITING
+   ────────────────────────────────────────
+   Nombre: Unlimited API
+   Patrón: api.
+   Match: Contains
+   Acción: Modificar
+   Headers:
+   {
+     "X-RateLimit-Remaining": "999999",
+     "X-RateLimit-Reset": "9999999999"
+   }
+
+═══════════════════════════════════════════════════════════════════
+
+🎯 CASOS DE USO REALES
+
+✓ Debugging de Apps Móviles
+  - Ver requests/responses de tu app
+  - Identificar errores de API
+  - Analizar headers y autenticación
+
+✓ Testing sin Backend
+  - Mockear responses de APIs
+  - Simular errores (404, 500)
+  - Probar edge cases
+
+✓ Bypass de Restricciones
+  - Modificar feature flags
+  - Cambiar datos de geolocalización
+  - Alterar rate limits
+
+✓ Análisis de Seguridad
+  - Detectar datos sensibles
+  - Verificar uso de HTTPS
+  - Analizar tokens y cookies
+
+✓ Pentesting de APIs
+  - Modificar parámetros
+  - Test de autorización
+  - Inyección de payloads
+
+═══════════════════════════════════════════════════════════════════
+
+🔮 ROADMAP FUTURO - IA INTEGRATION
+
+FASE 2: Inteligencia Artificial (Planeada)
+───────────────────────────────────────────
+
+1. CREACIÓN DE REGLAS CON LENGUAJE NATURAL
+   Usuario dice: "Bloquea todos los requests a Facebook"
+   IA crea:
+   {
+     name: "Block Facebook",
+     pattern: "facebook.com",
+     matchType: "CONTAINS",
+     action: "BLOCK"
+   }
+
+2. ANÁLISIS INTELIGENTE DE PATRONES
+   - ML para detectar patrones comunes
+   - Sugerencias automáticas de reglas
+   - Clasificación de requests (ads, analytics, api, etc.)
+
+3. GPT-4 INTEGRATION
+   Usuario: "Haz que todas las respuestas de /api/user me den premium"
+   IA genera regla automáticamente con patrón y body correcto
+
+4. DEBUGGING ASISTIDO POR IA
+   - Análisis de errores automático
+   - Sugerencias de fixes
+   - Detección de anomalías en tráfico
+
+Implementación:
+- API de OpenAI para procesamiento de lenguaje natural
+- TensorFlow Lite para clasificación local
+- Base de datos de patrones comunes
+- Interfaz de chat en Web UI
+
+═══════════════════════════════════════════════════════════════════
+
+📊 ESPECIFICACIONES TÉCNICAS
+
+Lenguaje: Kotlin 1.9.0
+Min SDK: 24 (Android 7.0)
+Target SDK: 34 (Android 14)
+
+Dependencias Principales:
+- io.netty:netty-all:4.1.100.Final
+- org.bouncycastle:bcprov-jdk15on:1.70
+- org.bouncycastle:bcpkix-jdk15on:1.70
+- org.nanohttpd:nanohttpd:2.3.1
+- com.google.code.gson:gson:2.10.1
+- org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3
+- androidx.appcompat:appcompat:1.6.1
+- com.google.android.material:material:1.11.0
+
+Permisos:
+- INTERNET
+- ACCESS_NETWORK_STATE
+- ACCESS_WIFI_STATE
+- FOREGROUND_SERVICE
+- POST_NOTIFICATIONS
+- WRITE_EXTERNAL_STORAGE
+- READ_EXTERNAL_STORAGE
+
+═══════════════════════════════════════════════════════════════════
+
+✅ CONCLUSIÓN
+
+Se ha creado una aplicación Android COMPLETA Y FUNCIONAL que:
+
+1. ✅ Intercepta tráfico HTTPS en puerto 2580 (conexiones externas)
+2. ✅ Genera y exporta certificados CA instalables
+3. ✅ Permite crear reglas para modificar requests/responses
+4. ✅ Modifica headers y body tanto de requests como responses
+5. ✅ Incluye interfaz web moderna en puerto 8080
+6. ✅ Muestra requests en tiempo real con auto-refresh
+7. ✅ Gestión completa de reglas desde la Web UI
+8. ✅ Preparada para futuras implementaciones con IA
+
+La app está lista para:
+- Compilar con: ./build.sh
+- Instalar en Android
+- Configurar proxy
+- Instalar certificado CA
+- Comenzar a interceptar y modificar tráfico HTTPS
+
+Próximo paso sugerido: Implementar la integración con IA para crear
+reglas automáticamente usando lenguaje natural.
+
+═══════════════════════════════════════════════════════════════════
