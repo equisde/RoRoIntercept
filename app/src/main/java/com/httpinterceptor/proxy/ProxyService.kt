@@ -140,6 +140,12 @@ class ProxyService : Service() {
     
     fun getCertificateBytes() = certManager.getCACertificateBytes()
     
+    fun getCertificateBytesPEM() = certManager.exportCACertificatePEM()
+    
+    fun getCertificateBytesDER() = certManager.exportCACertificateDER()
+    
+    fun getCertificateBytesP12() = certManager.exportCACertificateP12()
+    
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(

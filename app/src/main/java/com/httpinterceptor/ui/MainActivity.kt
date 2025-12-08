@@ -366,51 +366,39 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun exportCertificate() {
+        // Show format selection dialog
+        val formats = arrayOf("PEM (.crt)", "DER (.cer)", "PKCS#12 (.p12)", "Todos los formatos")
+        
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Selecciona formato de exportación")
+            .setItems(formats) { _, which ->
+                when (which) {
+                    0 -> exportCertificateFormat("PEM")
+                    1 -> exportCertificateFormat("DER")
+                    2 -> exportCertificateFormat("P12")
+                    3 -> exportAllFormats()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+    
+    private fun exportCertificateFormat(format: String) {
         proxyService?.let { service ->
             try {
-                // Get certificate bytes
-                val certBytes = service.getCertificateBytes()
-                
-                // Save to Downloads folder
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                val certFile = File(downloadsDir, "RoRoInterceptorCA.crt")
                 
+                val (certBytes, fileName) = when (format) {
+                    "PEM" -> Pair(service.getCertificateBytesPEM(), "RoRoInterceptorCA.crt")
+                    "DER" -> Pair(service.getCertificateBytesDER(), "RoRoInterceptorCA.cer")
+                    "P12" -> Pair(service.getCertificateBytesP12(), "RoRoInterceptorCA.p12")
+                    else -> return@let
+                }
+                
+                val certFile = File(downloadsDir, fileName)
                 certFile.writeBytes(certBytes)
                 
-                // Show dialog with options
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Certificado CA Exportado")
-                    .setMessage("""
-                        ✓ El certificado se guardó en:
-                        Descargas/RoRoInterceptorCA.crt
-                        
-                        Para interceptar tráfico HTTPS, debes instalar este certificado.
-                        
-                        ¿Cómo deseas instalarlo?
-                    """.trimIndent())
-                    .setPositiveButton("Instalador del Sistema") { _, _ ->
-                        try {
-                            val intent = Intent("android.credentials.INSTALL")
-                            intent.putExtra("certificate", certBytes)
-                            intent.putExtra("name", "RoRo Interceptor CA")
-                            startActivity(intent)
-                        } catch (e: Exception) {
-                            showManualInstructions(certFile.absolutePath)
-                        }
-                    }
-                    .setNeutralButton("Abrir Archivo") { _, _ ->
-                        openCertificateFile(certFile)
-                    }
-                    .setNegativeButton("Instrucciones Manuales") { _, _ ->
-                        showManualInstructions(certFile.absolutePath)
-                    }
-                    .show()
-                    
-                android.widget.Toast.makeText(
-                    this,
-                    "✓ Certificado guardado en Descargas",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+                showExportSuccessDialog(certFile, format)
                     
             } catch (e: Exception) {
                 android.widget.Toast.makeText(
@@ -420,6 +408,89 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
         }
+    }
+    
+    private fun exportAllFormats() {
+        proxyService?.let { service ->
+            try {
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                
+                // Export PEM
+                val pemFile = File(downloadsDir, "RoRoInterceptorCA.crt")
+                pemFile.writeBytes(service.getCertificateBytesPEM())
+                
+                // Export DER
+                val derFile = File(downloadsDir, "RoRoInterceptorCA.cer")
+                derFile.writeBytes(service.getCertificateBytesDER())
+                
+                // Export P12
+                val p12File = File(downloadsDir, "RoRoInterceptorCA.p12")
+                p12File.writeBytes(service.getCertificateBytesP12())
+                
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Certificados Exportados")
+                    .setMessage("""
+                        ✓ Certificados guardados en Descargas:
+                        
+                        • RoRoInterceptorCA.crt (PEM)
+                        • RoRoInterceptorCA.cer (DER)
+                        • RoRoInterceptorCA.p12 (PKCS#12)
+                        
+                        Prueba instalando cada formato hasta encontrar el que funcione mejor en tu dispositivo.
+                    """.trimIndent())
+                    .setPositiveButton("Ver archivos") { _, _ ->
+                        openCertificateFile(pemFile)
+                    }
+                    .setNegativeButton("Instrucciones") { _, _ ->
+                        showManualInstructions(downloadsDir.absolutePath)
+                    }
+                    .show()
+                    
+                android.widget.Toast.makeText(
+                    this,
+                    "✓ 3 formatos exportados",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                    
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    this,
+                    "Error exportando certificados: ${e.message}",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+    }
+    
+    private fun showExportSuccessDialog(certFile: File, format: String) {
+        val formatInfo = when (format) {
+            "PEM" -> "Formato estándar, recomendado para Android"
+            "DER" -> "Formato binario, compatible con algunos dispositivos"
+            "P12" -> "Formato PKCS#12 con contraseña vacía"
+            else -> ""
+        }
+        
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Certificado $format Exportado")
+            .setMessage("""
+                ✓ Certificado guardado en:
+                ${certFile.name}
+                
+                $formatInfo
+                
+                Para interceptar tráfico HTTPS, instala este certificado en:
+                Configuración → Seguridad → Cifrado y credenciales → Instalar un certificado → Certificado de CA
+            """.trimIndent())
+            .setPositiveButton("Abrir Archivo") { _, _ ->
+                openCertificateFile(certFile)
+            }
+            .setNeutralButton("Probar otro formato") { _, _ ->
+                exportCertificate()
+            }
+            .setNegativeButton("Instrucciones") { _, _ ->
+                showManualInstructions(certFile.absolutePath)
+            }
+            .show()
     }
     
     private fun openCertificateFile(certFile: File) {

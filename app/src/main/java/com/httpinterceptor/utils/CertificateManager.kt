@@ -204,6 +204,40 @@ class CertificateManager(private val context: Context) {
     
     fun getCAPrivateKey(): PrivateKey = caPrivateKey
     
+    // Export certificate in PEM format (plain text, like Fiddler)
+    fun exportCACertificatePEM(): ByteArray {
+        val encoded = Base64.encodeToString(caCert.encoded, Base64.NO_WRAP)
+        val pem = buildString {
+            appendLine("-----BEGIN CERTIFICATE-----")
+            encoded.chunked(64).forEach { appendLine(it) }
+            appendLine("-----END CERTIFICATE-----")
+        }
+        return pem.toByteArray(Charsets.UTF_8)
+    }
+    
+    // Export certificate in DER format (binary)
+    fun exportCACertificateDER(): ByteArray {
+        return caCert.encoded
+    }
+    
+    // Export certificate in PKCS#12 format with empty password
+    fun exportCACertificateP12(): ByteArray {
+        val p12 = KeyStore.getInstance("PKCS12")
+        p12.load(null, null)
+        
+        // Store CA certificate and private key with empty password
+        p12.setKeyEntry(
+            "RoRo Interceptor CA",
+            caPrivateKey,
+            CharArray(0), // Empty password
+            arrayOf(caCert)
+        )
+        
+        val outputStream = java.io.ByteArrayOutputStream()
+        p12.store(outputStream, CharArray(0)) // Empty password
+        return outputStream.toByteArray()
+    }
+    
     companion object {
         private const val TAG = "CertificateManager"
         private const val KEYSTORE_PASSWORD = "httpinterceptor"
