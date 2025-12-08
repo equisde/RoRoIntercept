@@ -153,10 +153,9 @@ class CertificateManager(private val context: Context) {
         val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
         val certFile = File(downloadsDir, "http_interceptor_ca.crt")
         
+        // Export as DER format (binary) - Android can install this without password
         FileOutputStream(certFile).use { fos ->
-            fos.write("-----BEGIN CERTIFICATE-----\n".toByteArray())
-            fos.write(Base64.getEncoder().encode(caCert.encoded))
-            fos.write("\n-----END CERTIFICATE-----\n".toByteArray())
+            fos.write(caCert.encoded)
         }
         
         Log.d(TAG, "CA certificate exported to: ${certFile.absolutePath}")
