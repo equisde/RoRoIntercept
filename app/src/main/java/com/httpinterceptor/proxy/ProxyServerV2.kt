@@ -360,7 +360,7 @@ class ProxyServerV2(
                         ctx.writeAndFlush(errorResponse).addListener(ChannelFutureListener.CLOSE)
                         ReferenceCountUtil.release(originalMsg)
                     }
-                }
+                })
             } catch (e: Exception) {
                 Log.e(TAG, "Error forwarding request", e)
                 val errorResponse = DefaultFullHttpResponse(
