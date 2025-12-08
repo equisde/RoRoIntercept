@@ -367,9 +367,9 @@ class MainActivity : AppCompatActivity() {
                 val certFile = service.exportCertificate()
                 
                 // Use Android's built-in certificate installer
-                val intent = Intent(android.security.KeyChain.ACTION_INSTALL)
-                intent.putExtra(android.security.KeyChain.EXTRA_CERTIFICATE, certFile.readBytes())
-                intent.putExtra(android.security.KeyChain.EXTRA_NAME, "RoRo Interceptor CA")
+                val intent = Intent("android.credentials.INSTALL")
+                intent.putExtra("name", "RoRo Interceptor CA")
+                intent.putExtra("CERT", certFile.readBytes())
                 
                 try {
                     startActivity(intent)
