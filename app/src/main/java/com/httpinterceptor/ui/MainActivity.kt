@@ -390,9 +390,9 @@ class MainActivity : AppCompatActivity() {
                     """.trimIndent())
                     .setPositiveButton("Instalador del Sistema") { _, _ ->
                         try {
-                            val intent = Intent(android.security.KeyChain.ACTION_INSTALL_CA_CERTIFICATE)
-                            intent.putExtra(android.security.KeyChain.EXTRA_CERTIFICATE, certBytes)
-                            intent.putExtra(android.security.KeyChain.EXTRA_NAME, "RoRo Interceptor CA")
+                            val intent = Intent("android.credentials.INSTALL")
+                            intent.putExtra("certificate", certBytes)
+                            intent.putExtra("name", "RoRo Interceptor CA")
                             startActivity(intent)
                         } catch (e: Exception) {
                             showManualInstructions(certFile.absolutePath)
