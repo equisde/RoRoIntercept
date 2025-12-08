@@ -3,6 +3,10 @@ package com.httpinterceptor.proxy
 import android.util.Log
 import com.httpinterceptor.model.HttpRequest as AppHttpRequest
 import com.httpinterceptor.model.HttpResponse as AppHttpResponse
+import com.httpinterceptor.model.ProxyRule
+import com.httpinterceptor.model.RuleAction
+import com.httpinterceptor.model.ModifyAction
+import com.httpinterceptor.model.SearchReplace
 import com.httpinterceptor.utils.CertificateManager
 import com.httpinterceptor.utils.RulesManager
 import io.netty.bootstrap.Bootstrap
@@ -145,7 +149,9 @@ class ProxyServerV2(
             val requestId = System.currentTimeMillis() + (0..999).random()
             
             val headers = mutableMapOf<String, String>()
-            msg.headers().forEach { headers[it.key] = it.value }
+            for (header in msg.headers()) {
+                headers[header.key] = header.value
+            }
             
             val bodyBytes = if (msg.content().readableBytes() > 0) {
                 ByteArray(msg.content().readableBytes()).also {
@@ -203,13 +209,17 @@ class ProxyServerV2(
             val newHeaders = request.headers.toMutableMap()
             
             // Add/Replace headers
-            modifyAction.modifyHeaders?.forEach { (key, value) ->
-                newHeaders[key] = value
+            modifyAction.modifyHeaders?.let { headers ->
+                for ((key, value) in headers) {
+                    newHeaders[key] = value
+                }
             }
             
             // Remove specific headers
-            modifyAction.removeHeaders?.forEach { headerName ->
-                newHeaders.remove(headerName)
+            modifyAction.removeHeaders?.let { headerNames ->
+                for (headerName in headerNames) {
+                    newHeaders.remove(headerName)
+                }
             }
             
             // Search & Replace in headers
@@ -298,7 +308,7 @@ class ProxyServerV2(
             val connectFuture = bootstrap.connect(request.host, port)
             
             outboundChannel = connectFuture.channel()
-            connectFuture.addListener { future: ChannelFuture ->
+            connectFuture.addListener(ChannelFutureListener { future ->
                 if (future.isSuccess) {
                     // Build modified request
                     val modifiedRequest = DefaultFullHttpRequest(
@@ -307,8 +317,10 @@ class ProxyServerV2(
                         request.path
                     )
                     
-                    request.headers.forEach { (key, value) ->
-                        modifiedRequest.headers().set(key, value)
+                    request.headers.let { headers ->
+                        for ((key, value) in headers) {
+                            modifiedRequest.headers().set(key, value)
+                        }
                     }
                     
                     request.body?.let {
@@ -322,7 +334,7 @@ class ProxyServerV2(
                     Log.e(TAG, "Failed to connect to ${request.host}", future.cause())
                     ctx.close()
                 }
-            }
+            })
         }
         
         override fun channelInactive(ctx: ChannelHandlerContext) {
@@ -343,7 +355,9 @@ class ProxyServerV2(
         
         override fun channelRead0(ctx: ChannelHandlerContext, msg: FullHttpResponse) {
             val headers = mutableMapOf<String, String>()
-            msg.headers().forEach { headers[it.key] = it.value }
+            for (header in msg.headers()) {
+                headers[header.key] = header.value
+            }
             
             val bodyBytes = if (msg.content().readableBytes() > 0) {
                 ByteArray(msg.content().readableBytes()).also {
@@ -376,8 +390,10 @@ class ProxyServerV2(
                 msg.status()
             )
             
-            response.headers.forEach { (key, value) ->
-                clientResponse.headers().set(key, value)
+            response.headers.let { headers ->
+                for ((key, value) in headers) {
+                    clientResponse.headers().set(key, value)
+                }
             }
             
             response.body?.let {
@@ -392,13 +408,17 @@ class ProxyServerV2(
             val newHeaders = response.headers.toMutableMap()
             
             // Add/Replace headers
-            modifyAction.modifyHeaders?.forEach { (key, value) ->
-                newHeaders[key] = value
+            modifyAction.modifyHeaders?.let { headers ->
+                for ((key, value) in headers) {
+                    newHeaders[key] = value
+                }
             }
             
             // Remove specific headers
-            modifyAction.removeHeaders?.forEach { headerName ->
-                newHeaders.remove(headerName)
+            modifyAction.removeHeaders?.let { headerNames ->
+                for (headerName in headerNames) {
+                    newHeaders.remove(headerName)
+                }
             }
             
             // Search & Replace in headers
