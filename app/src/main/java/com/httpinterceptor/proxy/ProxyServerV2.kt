@@ -277,7 +277,7 @@ class ProxyServerV2(
         ) {
             try {
                 val uri = URI(request.url)
-                val targetHost = uri.host
+                val targetHost = uri.host ?: "unknown"
                 val targetPort = if (uri.port > 0) uri.port else if (uri.scheme == "https") 443 else 80
                 val isHttps = uri.scheme == "https"
                 
@@ -288,7 +288,7 @@ class ProxyServerV2(
                     .channel(NioSocketChannel::class.java)
                     .option(ChannelOption.SO_KEEPALIVE, true)
                     .option(ChannelOption.TCP_NODELAY, true)
-                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 15000)
                     .handler(object : ChannelInitializer<SocketChannel>() {
                         override fun initChannel(ch: SocketChannel) {
                             if (isHttps) {
@@ -297,18 +297,18 @@ class ProxyServerV2(
                                     .forClient()
                                     .trustManager(InsecureTrustManagerFactory.INSTANCE)
                                     .build()
-                                ch.pipeline().addLast(sslContext.newHandler(ch.alloc(), targetHost, targetPort))
+                                ch.pipeline().addLast("ssl", sslContext.newHandler(ch.alloc(), targetHost, targetPort))
                             }
-                            ch.pipeline().addLast(HttpClientCodec())
-                            ch.pipeline().addLast(HttpObjectAggregator(10 * 1024 * 1024))
-                            ch.pipeline().addLast(BackendHandler(ctx, request.id, matchingRules))
+                            ch.pipeline().addLast("codec", HttpClientCodec(8192, 65536, 65536))
+                            ch.pipeline().addLast("aggregator", HttpObjectAggregator(10 * 1024 * 1024))
+                            ch.pipeline().addLast("handler", BackendHandler(ctx, request.id, matchingRules))
                         }
                     })
                 
-                bootstrap.connect(targetHost, targetPort).addListener { future ->
-                    val channelFuture = future as ChannelFuture
-                    if (channelFuture.isSuccess) {
-                        val outboundCh = channelFuture.channel()
+                val connectFuture = bootstrap.connect(targetHost, targetPort)
+                connectFuture.addListener(ChannelFutureListener { future ->
+                    if (future.isSuccess) {
+                        val outboundCh = future.channel()
                         
                         // Build outbound request
                         val path = if (uri.rawPath.isNullOrEmpty()) "/" else uri.rawPath +
@@ -323,17 +323,18 @@ class ProxyServerV2(
                         // Copy headers (excluding proxy-specific ones)
                         for ((key, value) in request.headers) {
                             if (!key.equals("Proxy-Connection", ignoreCase = true) &&
-                                !key.equals("Proxy-Authorization", ignoreCase = true)) {
+                                !key.equals("Proxy-Authorization", ignoreCase = true) &&
+                                !key.equals("Connection", ignoreCase = true)) {
                                 outboundRequest.headers().set(key, value)
                             }
                         }
                         
-                        // Ensure Host header
+                        // Ensure required headers
                         outboundRequest.headers().set(HttpHeaderNames.HOST, targetHost)
                         outboundRequest.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
                         
                         // Copy body
-                        if (request.body != null) {
+                        if (request.body != null && request.body.isNotEmpty()) {
                             outboundRequest.content().writeBytes(request.body)
                             outboundRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, request.body.size)
                         } else {
@@ -341,10 +342,15 @@ class ProxyServerV2(
                         }
                         
                         Log.d(TAG, "Sending request to $targetHost: ${request.method} $path")
-                        outboundCh.writeAndFlush(outboundRequest)
+                        outboundCh.writeAndFlush(outboundRequest).addListener(ChannelFutureListener { writeFuture ->
+                            if (!writeFuture.isSuccess) {
+                                Log.e(TAG, "Failed to write request to $targetHost", writeFuture.cause())
+                                ctx.close()
+                            }
+                        })
                         
                     } else {
-                        Log.e(TAG, "Failed to connect to $targetHost:$targetPort", channelFuture.cause())
+                        Log.e(TAG, "Failed to connect to $targetHost:$targetPort", future.cause())
                         val errorResponse = DefaultFullHttpResponse(
                             HttpVersion.HTTP_1_1,
                             HttpResponseStatus.BAD_GATEWAY,
