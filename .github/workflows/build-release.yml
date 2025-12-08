@@ -26,6 +26,18 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
+    - name: Decode keystore from secrets
+      if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+      run: |
+        echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/roro-release.keystore
+        
+    - name: Create keystore.properties
+      run: |
+        echo "storeFile=roro-release.keystore" > keystore.properties
+        echo "storePassword=${{ secrets.KEYSTORE_PASSWORD || 'RoRoDevs2024!' }}" >> keystore.properties
+        echo "keyAlias=${{ secrets.KEY_ALIAS || 'roro-key' }}" >> keystore.properties
+        echo "keyPassword=${{ secrets.KEY_PASSWORD || 'RoRoDevs2024!' }}" >> keystore.properties
+        
     - name: Cache Gradle packages
       uses: actions/cache@v3
       with:
@@ -38,10 +50,14 @@ jobs:
           
     - name: Build Release APK
       run: ./gradlew assembleRelease --stacktrace
+      env:
+        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'RoRoDevs2024!' }}
+        KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'roro-key' }}
+        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'RoRoDevs2024!' }}
       
-    - name: Sign APK
+    - name: Sign APK Info
       run: |
-        echo "APK signed with RoRo Devs keystore"
+        echo "✅ APK signed with RoRo Devs keystore"
         ls -lh app/build/outputs/apk/release/
         
     - name: Upload Release APK
@@ -64,7 +80,6 @@ jobs:
       with:
         files: |
           app/build/outputs/apk/release/app-release.apk
-          app/build/outputs/apk/debug/app-debug.apk
         generate_release_notes: true
         draft: false
         prerelease: false
@@ -75,8 +90,14 @@ jobs:
           Developed by **RoRo Devs**
           
           ### Downloads
-          - **Release APK**: Signed and optimized
-          - **Debug APK**: For development and testing
+          - **Release APK**: Signed and optimized for production
+          
+          ### Features
+          - HTTPS Proxy on port 2580
+          - Web UI on port 8080
+          - Advanced search & replace in headers/body
+          - SSL certificate generation
+          - Modify requests/responses with regex support
           
           ### Installation
           1. Download the APK
