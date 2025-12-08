@@ -462,6 +462,14 @@ class ProxyServerV2(
         }
     }
     
+    private fun applySearchReplace(text: String, sr: SearchReplace): String {
+        return if (sr.useRegex) {
+            text.replace(Regex(sr.search), sr.replace)
+        } else {
+            text.replace(sr.search, sr.replace)
+        }
+    }
+    
     companion object {
         private const val TAG = "ProxyServerV2"
     }
