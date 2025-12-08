@@ -69,14 +69,15 @@ class CertificateManager(private val context: Context) {
     
     private fun generateCACertificate(): Pair<X509Certificate, PrivateKey> {
         val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
-        keyPairGenerator.initialize(2048)
+        keyPairGenerator.initialize(2048, SecureRandom())
         val keyPair = keyPairGenerator.generateKeyPair()
         
         val now = Date()
         val notBefore = Date(now.time - 86400000L) // 1 day before
         val notAfter = Date(now.time + 365L * 24 * 60 * 60 * 1000 * 10) // 10 years
         
-        val issuer = X500Name("CN=HTTP Interceptor CA, O=HTTP Interceptor, C=US")
+        // Use simple common name, similar to Fiddler
+        val issuer = X500Name("CN=RoRo Interceptor Root CA, O=RoRo Devs, OU=Development")
         val subject = issuer
         
         val certBuilder = JcaX509v3CertificateBuilder(
@@ -88,11 +89,30 @@ class CertificateManager(private val context: Context) {
             keyPair.public
         )
         
+        // Add basic constraints to mark this as a CA certificate
+        certBuilder.addExtension(
+            Extension.basicConstraints,
+            true,
+            org.bouncycastle.asn1.x509.BasicConstraints(true)
+        )
+        
+        // Add key usage extensions (critical for CA)
+        certBuilder.addExtension(
+            Extension.keyUsage,
+            true,
+            org.bouncycastle.asn1.x509.KeyUsage(
+                org.bouncycastle.asn1.x509.KeyUsage.keyCertSign or
+                org.bouncycastle.asn1.x509.KeyUsage.cRLSign
+            )
+        )
+        
         val signer = JcaContentSignerBuilder("SHA256withRSA")
+            .setProvider("BC")
             .build(keyPair.private)
         
         val certHolder = certBuilder.build(signer)
         val cert = JcaX509CertificateConverter()
+            .setProvider("BC")
             .getCertificate(certHolder)
         
         return Pair(cert, keyPair.private)
