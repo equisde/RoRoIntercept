@@ -144,7 +144,9 @@ class ProxyService : Service() {
     
     fun getCertificateBytesDER() = certManager.exportCACertificateDER()
     
-    fun getCertificateBytesP12() = certManager.exportCACertificateP12()
+    fun getCertificateBytesCRT() = certManager.exportCACertificateCRT()
+    
+    fun getCertificateBytesCER() = certManager.exportCACertificateCER()
     
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

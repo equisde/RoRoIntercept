@@ -367,7 +367,7 @@ class MainActivity : AppCompatActivity() {
     
     private fun exportCertificate() {
         // Show format selection dialog
-        val formats = arrayOf("PEM (.crt)", "DER (.cer)", "PKCS#12 (.p12)", "Todos los formatos")
+        val formats = arrayOf("PEM (.pem)", "DER (.der)", "CRT (.crt)", "CER (.cer)", "Todos los formatos")
         
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Selecciona formato de exportación")
@@ -375,8 +375,9 @@ class MainActivity : AppCompatActivity() {
                 when (which) {
                     0 -> exportCertificateFormat("PEM")
                     1 -> exportCertificateFormat("DER")
-                    2 -> exportCertificateFormat("P12")
-                    3 -> exportAllFormats()
+                    2 -> exportCertificateFormat("CRT")
+                    3 -> exportCertificateFormat("CER")
+                    4 -> exportAllFormats()
                 }
             }
             .setNegativeButton("Cancelar", null)
@@ -389,9 +390,10 @@ class MainActivity : AppCompatActivity() {
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 
                 val (certBytes, fileName) = when (format) {
-                    "PEM" -> Pair(service.getCertificateBytesPEM(), "RoRoInterceptorCA.crt")
-                    "DER" -> Pair(service.getCertificateBytesDER(), "RoRoInterceptorCA.cer")
-                    "P12" -> Pair(service.getCertificateBytesP12(), "RoRoInterceptorCA.p12")
+                    "PEM" -> Pair(service.getCertificateBytesPEM(), "RoRoInterceptorCA.pem")
+                    "DER" -> Pair(service.getCertificateBytesDER(), "RoRoInterceptorCA.der")
+                    "CRT" -> Pair(service.getCertificateBytesCRT(), "RoRoInterceptorCA.crt")
+                    "CER" -> Pair(service.getCertificateBytesCER(), "RoRoInterceptorCA.cer")
                     else -> return@let
                 }
                 
@@ -415,31 +417,35 @@ class MainActivity : AppCompatActivity() {
             try {
                 val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
                 
-                // Export PEM
-                val pemFile = File(downloadsDir, "RoRoInterceptorCA.crt")
+                // Export all formats - ONLY CERTIFICATE, NO PRIVATE KEY
+                val pemFile = File(downloadsDir, "RoRoInterceptorCA.pem")
                 pemFile.writeBytes(service.getCertificateBytesPEM())
                 
-                // Export DER
-                val derFile = File(downloadsDir, "RoRoInterceptorCA.cer")
+                val derFile = File(downloadsDir, "RoRoInterceptorCA.der")
                 derFile.writeBytes(service.getCertificateBytesDER())
                 
-                // Export P12
-                val p12File = File(downloadsDir, "RoRoInterceptorCA.p12")
-                p12File.writeBytes(service.getCertificateBytesP12())
+                val crtFile = File(downloadsDir, "RoRoInterceptorCA.crt")
+                crtFile.writeBytes(service.getCertificateBytesCRT())
+                
+                val cerFile = File(downloadsDir, "RoRoInterceptorCA.cer")
+                cerFile.writeBytes(service.getCertificateBytesCER())
                 
                 androidx.appcompat.app.AlertDialog.Builder(this)
                     .setTitle("Certificados Exportados")
                     .setMessage("""
                         ✓ Certificados guardados en Descargas:
                         
-                        • RoRoInterceptorCA.crt (PEM)
-                        • RoRoInterceptorCA.cer (DER)
-                        • RoRoInterceptorCA.p12 (PKCS#12)
+                        • RoRoInterceptorCA.pem (PEM - texto)
+                        • RoRoInterceptorCA.der (DER - binario)
+                        • RoRoInterceptorCA.crt (CRT - binario)
+                        • RoRoInterceptorCA.cer (CER - binario)
                         
-                        Prueba instalando cada formato hasta encontrar el que funcione mejor en tu dispositivo.
+                        ℹ Recomendado para Android: .crt o .cer
+                        
+                        Todos contienen solo el certificado público (sin clave privada) y NO requieren contraseña.
                     """.trimIndent())
                     .setPositiveButton("Ver archivos") { _, _ ->
-                        openCertificateFile(pemFile)
+                        openCertificateFile(crtFile)
                     }
                     .setNegativeButton("Instrucciones") { _, _ ->
                         showManualInstructions(downloadsDir.absolutePath)

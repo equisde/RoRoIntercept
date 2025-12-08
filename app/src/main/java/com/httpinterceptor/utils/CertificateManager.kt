@@ -205,6 +205,7 @@ class CertificateManager(private val context: Context) {
     fun getCAPrivateKey(): PrivateKey = caPrivateKey
     
     // Export certificate in PEM format (plain text, like Fiddler)
+    // ONLY CERTIFICATE, NO PRIVATE KEY - for CA installation
     fun exportCACertificatePEM(): ByteArray {
         val encoded = Base64.encodeToString(caCert.encoded, Base64.NO_WRAP)
         val pem = buildString {
@@ -216,26 +217,23 @@ class CertificateManager(private val context: Context) {
     }
     
     // Export certificate in DER format (binary)
+    // ONLY CERTIFICATE, NO PRIVATE KEY - recommended for Android CA installation
     fun exportCACertificateDER(): ByteArray {
+        // Return only the certificate in DER format, no private key
+        // This is what Android expects for CA installation
         return caCert.encoded
     }
     
-    // Export certificate in PKCS#12 format with empty password
-    fun exportCACertificateP12(): ByteArray {
-        val p12 = KeyStore.getInstance("PKCS12")
-        p12.load(null, null)
-        
-        // Store CA certificate and private key with empty password
-        p12.setKeyEntry(
-            "RoRo Interceptor CA",
-            caPrivateKey,
-            CharArray(0), // Empty password
-            arrayOf(caCert)
-        )
-        
-        val outputStream = java.io.ByteArrayOutputStream()
-        p12.store(outputStream, CharArray(0)) // Empty password
-        return outputStream.toByteArray()
+    // Export certificate in CRT format (same as DER but with .crt extension)
+    fun exportCACertificateCRT(): ByteArray {
+        // CRT is just DER format with different extension
+        return caCert.encoded
+    }
+    
+    // Export certificate in CER format (same as DER but with .cer extension)
+    fun exportCACertificateCER(): ByteArray {
+        // CER is just DER format with different extension
+        return caCert.encoded
     }
     
     companion object {
