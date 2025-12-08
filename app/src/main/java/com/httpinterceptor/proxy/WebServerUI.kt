@@ -505,7 +505,7 @@ class WebServerUI(
 
         function deleteRule(id) {
             if (confirm('¿Eliminar esta regla?')) {
-                fetch(`/api/rules/$${id}`, {method: 'DELETE'})
+                fetch(`/api/rules/${'$'}${'$'}{id}`, {method: 'DELETE'})
                     .then(() => loadRules());
             }
         }

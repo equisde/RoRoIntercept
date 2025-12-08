@@ -1,7 +1,8 @@
 package com.httpinterceptor.proxy
 
 import android.util.Log
-import com.httpinterceptor.model.*
+import com.httpinterceptor.model.HttpRequest as AppHttpRequest
+import com.httpinterceptor.model.HttpResponse as AppHttpResponse
 import com.httpinterceptor.utils.CertificateManager
 import com.httpinterceptor.utils.RulesManager
 import io.netty.bootstrap.Bootstrap
@@ -32,11 +33,11 @@ class ProxyServerV2(
     private var bossGroup: EventLoopGroup? = null
     private var workerGroup: EventLoopGroup? = null
     private var channel: Channel? = null
-    private val requestCache = ConcurrentHashMap<Long, HttpRequest>()
+    private val requestCache = ConcurrentHashMap<Long, AppHttpRequest>()
     
     interface ProxyListener {
-        fun onRequestReceived(request: HttpRequest)
-        fun onResponseReceived(requestId: Long, response: HttpResponse)
+        fun onRequestReceived(request: AppHttpRequest)
+        fun onResponseReceived(requestId: Long, response: AppHttpResponse)
         fun onError(error: String)
     }
     
@@ -157,7 +158,7 @@ class ProxyServerV2(
             val isHttps = ctx.pipeline().get("ssl") != null
             val scheme = if (isHttps) "https" else "http"
             
-            var request = HttpRequest(
+            var request = AppHttpRequest(
                 id = requestId,
                 timestamp = System.currentTimeMillis(),
                 method = msg.method().name(),
@@ -198,7 +199,7 @@ class ProxyServerV2(
             forwardRequest(ctx, request, msg, matchingRules)
         }
         
-        private fun applyRequestModifications(request: HttpRequest, modifyAction: ModifyAction): HttpRequest {
+        private fun applyRequestModifications(request: AppHttpRequest, modifyAction: ModifyAction): AppHttpRequest {
             val newHeaders = request.headers.toMutableMap()
             
             // Add/Replace headers
@@ -213,7 +214,7 @@ class ProxyServerV2(
             
             // Search & Replace in headers
             modifyAction.searchReplaceHeaders?.forEach { sr ->
-                newHeaders.entries.forEach { entry ->
+                for (entry in newHeaders.entries) {
                     val newValue = applySearchReplace(entry.value, sr)
                     if (newValue != entry.value) {
                         newHeaders[entry.key] = newValue
@@ -268,7 +269,7 @@ class ProxyServerV2(
         
         private fun forwardRequest(
             ctx: ChannelHandlerContext,
-            request: HttpRequest,
+            request: AppHttpRequest,
             originalMsg: FullHttpRequest,
             matchingRules: List<ProxyRule>
         ) {
@@ -336,7 +337,7 @@ class ProxyServerV2(
     
     inner class ProxyBackendHandler(
         private val inboundChannel: ChannelHandlerContext,
-        private val request: HttpRequest,
+        private val request: AppHttpRequest,
         private val matchingRules: List<ProxyRule>
     ) : SimpleChannelInboundHandler<FullHttpResponse>() {
         
@@ -350,7 +351,7 @@ class ProxyServerV2(
                 }
             } else null
             
-            var response = HttpResponse(
+            var response = AppHttpResponse(
                 statusCode = msg.status().code(),
                 statusMessage = msg.status().reasonPhrase(),
                 headers = headers,
@@ -387,7 +388,7 @@ class ProxyServerV2(
             inboundChannel.writeAndFlush(clientResponse).addListener(ChannelFutureListener.CLOSE)
         }
         
-        private fun applyResponseModifications(response: HttpResponse, modifyAction: ModifyAction): HttpResponse {
+        private fun applyResponseModifications(response: AppHttpResponse, modifyAction: ModifyAction): AppHttpResponse {
             val newHeaders = response.headers.toMutableMap()
             
             // Add/Replace headers
@@ -402,7 +403,7 @@ class ProxyServerV2(
             
             // Search & Replace in headers
             modifyAction.searchReplaceHeaders?.forEach { sr ->
-                newHeaders.entries.forEach { entry ->
+                for (entry in newHeaders.entries) {
                     val newValue = applySearchReplace(entry.value, sr)
                     if (newValue != entry.value) {
                         newHeaders[entry.key] = newValue

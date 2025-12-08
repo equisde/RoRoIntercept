@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity() {
     
     private lateinit var btnStartStop: MaterialButton
     private lateinit var tvStatus: MaterialTextView
-    private lateinit tvProxyInfo: MaterialTextView
+    private lateinit var tvProxyInfo: MaterialTextView
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: RequestAdapter
     
