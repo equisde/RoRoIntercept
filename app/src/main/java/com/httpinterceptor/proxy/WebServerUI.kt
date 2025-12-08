@@ -352,17 +352,17 @@ class WebServerUI(
             }
             
             list.innerHTML = requests.slice(0, 50).map(req => {
-                const statusClass = req.response ? `status-$${Math.floor(req.response.statusCode / 100)}xx` : '';
+                const statusClass = req.response ? `status-${'$'}{Math.floor(req.response.statusCode / 100)}xx` : '';
                 const statusCode = req.response ? req.response.statusCode : '...';
                 return `
-                    <div class="request-item" onclick="showRequestDetail(${req.id})">
+                    <div class="request-item" onclick="showRequestDetail(${'$'}{req.id})">
                         <div>
-                            <span class="method ${req.method}">${req.method}</span>
-                            <span class="status-code ${statusClass}">${statusCode}</span>
-                            ${req.modified ? '<span class="badge badge-warning">MODIFICADO</span>' : ''}
+                            <span class="method ${'$'}{req.method}">${'$'}{req.method}</span>
+                            <span class="status-code ${'$'}{statusClass}">${'$'}{statusCode}</span>
+                            ${'$'}{req.modified ? '<span class="badge badge-warning">MODIFICADO</span>' : ''}
                         </div>
-                        <span class="url">${req.url}</span>
-                        <small style="color: #9ca3af;">${new Date(req.timestamp).toLocaleTimeString()}</small>
+                        <span class="url">${'$'}{req.url}</span>
+                        <small style="color: #9ca3af;">${'$'}{new Date(req.timestamp).toLocaleTimeString()}</small>
                     </div>
                 `;
             }).join('');
@@ -376,16 +376,16 @@ class WebServerUI(
             }
             
             list.innerHTML = rules.map(rule => `
-                <div class="rule-item ${rule.enabled ? 'rule-enabled' : 'rule-disabled'}">
+                <div class="rule-item ${'$'}{rule.enabled ? 'rule-enabled' : 'rule-disabled'}">
                     <div>
-                        <strong>${rule.name}</strong>
+                        <strong>${'$'}{rule.name}</strong>
                         <br>
-                        <small style="color: #6b7280;">${rule.urlPattern}</small>
+                        <small style="color: #6b7280;">${'$'}{rule.urlPattern}</small>
                         <br>
-                        <span class="badge badge-info">${rule.matchType}</span>
-                        <span class="badge ${rule.action === 'BLOCK' ? 'badge-warning' : 'badge-success'}">${rule.action}</span>
+                        <span class="badge badge-info">${'$'}{rule.matchType}</span>
+                        <span class="badge ${'$'}{rule.action === 'BLOCK' ? 'badge-warning' : 'badge-success'}">${'$'}{rule.action}</span>
                     </div>
-                    <button class="btn btn-danger btn-sm" onclick="deleteRule(${rule.id})">Eliminar</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteRule(${'$'}{rule.id})">Eliminar</button>
                 </div>
             `).join('');
         }
@@ -398,28 +398,28 @@ class WebServerUI(
             const panel = document.getElementById('detailPanel');
             
             detail.innerHTML = `
-                <h3>${req.method} ${req.url}</h3>
-                <p><strong>Host:</strong> ${req.host}</p>
-                <p><strong>Timestamp:</strong> ${new Date(req.timestamp).toLocaleString()}</p>
+                <h3>${'$'}{req.method} ${'$'}{req.url}</h3>
+                <p><strong>Host:</strong> ${'$'}{req.host}</p>
+                <p><strong>Timestamp:</strong> ${'$'}{new Date(req.timestamp).toLocaleString()}</p>
                 
                 <h4 style="margin-top: 20px;">Request Headers</h4>
-                <pre>${JSON.stringify(req.headers, null, 2)}</pre>
+                <pre>${'$'}{JSON.stringify(req.headers, null, 2)}</pre>
                 
-                ${req.body ? `
+                ${'$'}{req.body ? `
                     <h4 style="margin-top: 20px;">Request Body</h4>
-                    <pre>${req.body}</pre>
+                    <pre>${'$'}{req.body}</pre>
                 ` : ''}
                 
-                ${req.response ? `
+                ${'$'}{req.response ? `
                     <h4 style="margin-top: 20px;">Response Status</h4>
-                    <p><strong>${req.response.statusCode} ${req.response.statusMessage}</strong></p>
+                    <p><strong>${'$'}{req.response.statusCode} ${'$'}{req.response.statusMessage}</strong></p>
                     
                     <h4 style="margin-top: 20px;">Response Headers</h4>
-                    <pre>${JSON.stringify(req.response.headers, null, 2)}</pre>
+                    <pre>${'$'}{JSON.stringify(req.response.headers, null, 2)}</pre>
                     
-                    ${req.response.body ? `
+                    ${'$'}{req.response.body ? `
                         <h4 style="margin-top: 20px;">Response Body</h4>
-                        <pre>${req.response.body.substring(0, 1000)}${req.response.body.length > 1000 ? '...' : ''}</pre>
+                        <pre>${'$'}{req.response.body.substring(0, 1000)}${'$'}{req.response.body.length > 1000 ? '...' : ''}</pre>
                     ` : ''}
                 ` : '<p style="color: #f59e0b;">Esperando respuesta...</p>'}
             `;
