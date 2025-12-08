@@ -24,10 +24,23 @@ android {
 
     signingConfigs {
         release {
-            storeFile file('roro-release.keystore')
-            storePassword 'RoRoDevs2024!'
-            keyAlias 'roro-key'
-            keyPassword 'RoRoDevs2024!'
+            // Load keystore config from properties file or environment
+            def keystorePropertiesFile = rootProject.file("keystore.properties")
+            def keystoreProperties = new Properties()
+            
+            if (keystorePropertiesFile.exists()) {
+                keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            } else {
+                // Fallback to environment variables (for CI/CD)
+                storeFile file('roro-release.keystore')
+                storePassword System.getenv("KEYSTORE_PASSWORD") ?: "RoRoDevs2024!"
+                keyAlias System.getenv("KEY_ALIAS") ?: "roro-key"
+                keyPassword System.getenv("KEY_PASSWORD") ?: "RoRoDevs2024!"
+            }
         }
     }
 

@@ -87,8 +87,14 @@ Thumbs.db
 *.swp
 *.bak
 
-# Keystore (KEEP SECRET - already committed for demo)
-# Uncomment these lines in production:
+# Keystore (KEEP SECRET)
+# For production: DO NOT commit keystore files
+# Use GitHub Secrets instead
 # *.keystore
 # *.jks
 # keystore.properties
+
+# Keystore files - DO NOT COMMIT
+keystore.properties
+keystore.b64
+*.keystore.backup
