@@ -86,3 +86,9 @@ Thumbs.db
 *~
 *.swp
 *.bak
+
+# Keystore (KEEP SECRET - already committed for demo)
+# Uncomment these lines in production:
+# *.keystore
+# *.jks
+# keystore.properties

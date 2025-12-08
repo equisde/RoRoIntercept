@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">RoRo Interceptor</string>
+    <string name="developer">RoRo Devs</string>
+    <string name="app_description">Intercepta y modifica tráfico HTTP/HTTPS</string>
+    <string name="copyright">© 2024 RoRo Devs. All Rights Reserved.</string>
 </resources>

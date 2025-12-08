@@ -15,16 +15,32 @@ android {
         versionName "1.0.0"
         
         vectorDrawables.useSupportLibrary = true
+        
+        // RoRo Devs branding
+        resValue "string", "developer_name", "RoRo Devs"
+        buildConfigField "String", "DEVELOPER", "\"RoRo Devs\""
+        buildConfigField "long", "BUILD_TIME", System.currentTimeMillis() + "L"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('roro-release.keystore')
+            storePassword 'RoRoDevs2024!'
+            keyAlias 'roro-key'
+            keyPassword 'RoRoDevs2024!'
+        }
     }
 
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
             applicationIdSuffix ".debug"
+            versionNameSuffix "-DEBUG"
             debuggable true
         }
     }
