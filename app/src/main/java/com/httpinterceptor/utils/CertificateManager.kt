@@ -153,13 +153,19 @@ class CertificateManager(private val context: Context) {
     }
     
     fun exportCACertificate(): File {
-        // Export to internal app storage first (no permissions needed)
+        // Export to internal app storage in PEM format (plain text, no encryption)
         val certFile = File(context.filesDir, "RoRo_Interceptor_CA.crt")
         
-        // Export certificate in DER format for Android certificate installer
-        FileOutputStream(certFile).use { fos ->
-            fos.write(caCert.encoded)
+        // Export as PEM format (same as Fiddler - no password required)
+        val encoded = Base64.encodeToString(caCert.encoded, Base64.NO_WRAP)
+        val pem = buildString {
+            appendLine("-----BEGIN CERTIFICATE-----")
+            // Split into 64-character lines as per PEM standard
+            encoded.chunked(64).forEach { appendLine(it) }
+            appendLine("-----END CERTIFICATE-----")
         }
+        
+        certFile.writeText(pem)
         
         Log.d(TAG, "CA certificate exported to: ${certFile.absolutePath}")
         return certFile
