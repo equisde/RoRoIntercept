@@ -13,12 +13,15 @@ import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileWriter
 import java.math.BigInteger
 import java.security.*
 import java.security.cert.X509Certificate
 import java.util.*
+import android.util.Base64
 
 class CertificateManager(private val context: Context) {
     
@@ -151,11 +154,22 @@ class CertificateManager(private val context: Context) {
     
     fun exportCACertificate(): File {
         val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val certFile = File(downloadsDir, "http_interceptor_ca.crt")
+        val certFile = File(downloadsDir, "RoRo_Interceptor_CA.crt")
         
-        // Export as DER format (binary) - Android can install this without password
-        FileOutputStream(certFile).use { fos ->
-            fos.write(caCert.encoded)
+        // Export as PEM format - compatible with Android
+        val encoded = Base64.encodeToString(caCert.encoded, Base64.NO_WRAP)
+        val pem = buildString {
+            append("-----BEGIN CERTIFICATE-----\n")
+            // Split into 64 character lines
+            encoded.chunked(64).forEach { line ->
+                append(line)
+                append("\n")
+            }
+            append("-----END CERTIFICATE-----\n")
+        }
+        
+        FileWriter(certFile).use { writer ->
+            writer.write(pem)
         }
         
         Log.d(TAG, "CA certificate exported to: ${certFile.absolutePath}")
