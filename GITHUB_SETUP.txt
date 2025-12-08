@@ -1,0 +1,180 @@
+╔══════════════════════════════════════════════════════════════╗
+║         ROROTHE INTERCEPTOR - GITHUB SETUP GUIDE             ║
+╚══════════════════════════════════════════════════════════════╝
+
+✅ PROYECTO PREPARADO PARA GITHUB
+
+📊 Resumen:
+───────────────────────────────────────────────────────────────
+  Nombre del Repo: RoRoIntercept
+  Nombre de la App: RoRo Interceptor
+  Commits: 3
+  Files: 33
+  Kotlin: 10 archivos
+  Workflows: 2 (CI/CD)
+
+🔧 Versiones (Última versión disponible - Dic 2024):
+───────────────────────────────────────────────────────────────
+  ✓ Gradle: 8.5
+  ✓ Android Gradle Plugin: 8.2.1
+  ✓ Kotlin: 1.9.22
+  ✓ Java/JDK: 17
+  ✓ Netty: 4.1.104.Final
+  ✓ BouncyCastle: 1.77 (jdk18on)
+  ✓ Coroutines: 1.7.3
+  ✓ Material Design: 1.11.0
+
+🚀 PASO 1: Crear Repositorio en GitHub
+───────────────────────────────────────────────────────────────
+
+OPCIÓN A: Script Automático
+  ./CREATE_REPO.sh
+
+OPCIÓN B: Comando Manual
+  gh repo create RoRoIntercept \
+    --public \
+    --description "🔍 Intercepta y modifica tráfico HTTP/HTTPS" \
+    --source=. \
+    --remote=origin \
+    --push
+
+OPCIÓN C: Crear Manualmente en GitHub.com
+  1. Ve a: https://github.com/new
+  2. Nombre: RoRoIntercept
+  3. Descripción: 🔍 Intercepta y modifica tráfico HTTP/HTTPS
+  4. Public
+  5. NO inicializar con README (ya tenemos archivos)
+  6. Crear repositorio
+  7. Ejecutar:
+     git remote add origin https://github.com/YOUR_USERNAME/RoRoIntercept.git
+     git push -u origin main
+
+📋 PASO 2: Configurar GitHub Actions
+───────────────────────────────────────────────────────────────
+
+Después de crear el repo:
+
+1. Ve a: Settings → Actions → General
+2. Workflow permissions → Selecciona:
+   ✓ Read and write permissions
+3. Save
+
+Esto permite que GitHub Actions suba artifacts automáticamente.
+
+🏗️ PASO 3: GitHub Actions compilará automáticamente
+───────────────────────────────────────────────────────────────
+
+Workflows configurados:
+
+1. Android CI Build (.github/workflows/build.yml)
+   Trigger: Push a main/develop, PRs
+   Compila: Debug + Release APK
+   Artifacts: Disponibles en cada build
+
+2. Release Build (.github/workflows/release.yml)
+   Trigger: Tags v* (ej: v1.0.0)
+   Crea: GitHub Release con APKs
+
+📥 PASO 4: Descargar APKs Compilados
+───────────────────────────────────────────────────────────────
+
+Opción 1: Desde GitHub Actions
+  https://github.com/YOUR_USERNAME/RoRoIntercept/actions
+  → Último workflow → Artifacts → Download
+
+Opción 2: Desde Releases (si creaste un tag)
+  gh release download latest --pattern "*.apk"
+
+Opción 3: Compilar localmente
+  ./gradlew assembleDebug
+  APK en: app/build/outputs/apk/debug/app-debug.apk
+
+��️ PASO 5: Crear un Release (Opcional)
+───────────────────────────────────────────────────────────────
+
+  git tag v1.0.0
+  git push origin v1.0.0
+
+  GitHub Actions automáticamente:
+  1. Compila APKs
+  2. Crea Release
+  3. Sube archivos
+
+📝 ARCHIVOS IMPORTANTES
+───────────────────────────────────────────────────────────────
+
+  README.md              - Documentación principal
+  QUICKSTART.md          - Guía rápida de uso
+  DEPLOYMENT.md          - Guía de deployment detallada
+  FEATURES.txt           - Lista completa de características
+  LICENSE                - MIT License
+  .github/workflows/     - CI/CD pipelines
+  CREATE_REPO.sh         - Script para crear repo
+
+🔗 URLs a Actualizar
+───────────────────────────────────────────────────────────────
+
+Busca y reemplaza "YOUR_USERNAME" con tu usuario de GitHub en:
+  - README.md
+  - DEPLOYMENT.md
+  - CREATE_REPO.sh
+
+Comando rápido:
+  sed -i 's/YOUR_USERNAME/tu_usuario_github/g' README.md
+  sed -i 's/YOUR_USERNAME/tu_usuario_github/g' DEPLOYMENT.md
+  sed -i 's/YOUR_USERNAME/tu_usuario_github/g' CREATE_REPO.sh
+
+✅ CHECKLIST FINAL
+───────────────────────────────────────────────────────────────
+
+[ ] 1. Autenticarse en GitHub CLI: gh auth login
+[ ] 2. Crear repositorio: ./CREATE_REPO.sh
+[ ] 3. Configurar Actions permissions
+[ ] 4. Actualizar URLs con tu username
+[ ] 5. Hacer primer push: git push origin main
+[ ] 6. Verificar que el workflow se ejecute
+[ ] 7. Descargar APK compilado de Actions
+[ ] 8. Instalar y probar la app
+
+🎯 RESULTADO ESPERADO
+───────────────────────────────────────────────────────────────
+
+Después de hacer push a GitHub:
+✓ GitHub Actions compila automáticamente
+✓ APKs disponibles en "Artifacts"
+✓ Badge de build status en README
+✓ Repo público visible
+✓ CI/CD funcionando
+
+📱 USO DE LA APP
+───────────────────────────────────────────────────────────────
+
+1. Instalar APK
+2. Abrir app → "Start Proxy"
+3. WiFi Settings → Proxy Manual → IP:2580
+4. Exportar e instalar certificado CA
+5. Abrir Web UI: http://IP:8080
+6. Crear reglas de modificación
+7. Interceptar tráfico HTTPS
+
+🆘 TROUBLESHOOTING
+───────────────────────────────────────────────────────────────
+
+Problema: gh auth login falla
+Solución: gh auth login --web
+
+Problema: Workflow no se ejecuta
+Solución: Verifica permissions en Settings → Actions
+
+Problema: APKs no se suben
+Solución: Activa "Read and write permissions"
+
+Problema: Build falla
+Solución: Verifica que gradlew tenga permisos de ejecución
+          chmod +x gradlew
+
+═══════════════════════════════════════════════════════════════
+
+¡Listo para subir a GitHub! 🚀
+
+Ejecuta: ./CREATE_REPO.sh
