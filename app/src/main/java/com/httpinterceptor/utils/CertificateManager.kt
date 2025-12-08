@@ -153,14 +153,27 @@ class CertificateManager(private val context: Context) {
     }
     
     fun exportCACertificate(): File {
-        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val certFile = File(downloadsDir, "RoRo_Interceptor_CA.crt")
+        // Export to internal app storage first (no permissions needed)
+        val certFile = File(context.filesDir, "RoRo_Interceptor_CA.crt")
         
-        // Export as PEM format - compatible with Android
+        // Export certificate in DER format for Android certificate installer
+        FileOutputStream(certFile).use { fos ->
+            fos.write(caCert.encoded)
+        }
+        
+        Log.d(TAG, "CA certificate exported to: ${certFile.absolutePath}")
+        return certFile
+    }
+    
+    fun exportCACertificateToPEM(): File {
+        // Also export PEM format to Downloads for manual installation
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val certFile = File(downloadsDir, "RoRo_Interceptor_CA.pem")
+        
+        // Export as PEM format
         val encoded = Base64.encodeToString(caCert.encoded, Base64.NO_WRAP)
         val pem = buildString {
             append("-----BEGIN CERTIFICATE-----\n")
-            // Split into 64 character lines
             encoded.chunked(64).forEach { line ->
                 append(line)
                 append("\n")
@@ -172,7 +185,7 @@ class CertificateManager(private val context: Context) {
             writer.write(pem)
         }
         
-        Log.d(TAG, "CA certificate exported to: ${certFile.absolutePath}")
+        Log.d(TAG, "CA certificate (PEM) exported to: ${certFile.absolutePath}")
         return certFile
     }
     

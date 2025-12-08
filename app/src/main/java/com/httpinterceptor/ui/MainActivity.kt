@@ -365,27 +365,39 @@ class MainActivity : AppCompatActivity() {
         proxyService?.let { service ->
             try {
                 val certFile = service.exportCertificate()
-                android.widget.Toast.makeText(
-                    this,
-                    "Certificado exportado a: ${certFile.absolutePath}",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
                 
-                // Show instructions dialog
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Certificado CA Exportado")
-                    .setMessage("""
-                        El certificado se guardó en:
-                        ${certFile.absolutePath}
-                        
-                        Para interceptar HTTPS:
-                        1. Ve a Ajustes > Seguridad > Instalar desde almacenamiento
-                        2. Selecciona el archivo: http_interceptor_ca.crt
-                        3. Nombra el certificado
-                        4. Reinicia tu navegador/app
-                    """.trimIndent())
-                    .setPositiveButton("OK", null)
-                    .show()
+                // Use Android's built-in certificate installer
+                val intent = Intent(android.security.KeyChain.ACTION_INSTALL)
+                intent.putExtra(android.security.KeyChain.EXTRA_CERTIFICATE, certFile.readBytes())
+                intent.putExtra(android.security.KeyChain.EXTRA_NAME, "RoRo Interceptor CA")
+                
+                try {
+                    startActivity(intent)
+                    android.widget.Toast.makeText(
+                        this,
+                        "Instalando certificado CA...",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                } catch (e: Exception) {
+                    // Fallback: Show manual installation instructions
+                    androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle("Certificado CA Exportado")
+                        .setMessage("""
+                            No se pudo abrir el instalador automático.
+                            El certificado se guardó en:
+                            ${certFile.absolutePath}
+                            
+                            Instalación manual:
+                            1. Ve a Ajustes > Seguridad > Credenciales de confianza
+                            2. Toca "Instalar desde almacenamiento del dispositivo"
+                            3. Selecciona el archivo certificado
+                            4. Nombra el certificado como "RoRo Interceptor CA"
+                            
+                            NOTA: Android requiere un PIN/patrón/contraseña de bloqueo de pantalla para instalar certificados CA. Si no tienes uno, configúralo primero en Ajustes > Seguridad.
+                        """.trimIndent())
+                        .setPositiveButton("OK", null)
+                        .show()
+                }
             } catch (e: Exception) {
                 android.widget.Toast.makeText(
                     this,
