@@ -1,6 +1,8 @@
 package com.httpinterceptor.ui
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -21,6 +23,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.button.MaterialButton
@@ -28,6 +31,7 @@ import com.google.android.material.textview.MaterialTextView
 import com.httpinterceptor.R
 import com.httpinterceptor.model.HttpRequest
 import com.httpinterceptor.model.HttpResponse
+import java.io.File
 import com.httpinterceptor.proxy.ProxyService
 
 class MainActivity : AppCompatActivity() {
@@ -364,40 +368,50 @@ class MainActivity : AppCompatActivity() {
     private fun exportCertificate() {
         proxyService?.let { service ->
             try {
-                val certFile = service.exportCertificate()
+                // Get certificate bytes
+                val certBytes = service.getCertificateBytes()
                 
-                // Use Android's built-in certificate installer
-                val intent = Intent("android.credentials.INSTALL")
-                intent.putExtra("name", "RoRo Interceptor CA")
-                intent.putExtra("CERT", certFile.readBytes())
+                // Save to Downloads folder
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                val certFile = File(downloadsDir, "RoRoInterceptorCA.crt")
                 
-                try {
-                    startActivity(intent)
-                    android.widget.Toast.makeText(
-                        this,
-                        "Instalando certificado CA...",
-                        android.widget.Toast.LENGTH_SHORT
-                    ).show()
-                } catch (e: Exception) {
-                    // Fallback: Show manual installation instructions
-                    androidx.appcompat.app.AlertDialog.Builder(this)
-                        .setTitle("Certificado CA Exportado")
-                        .setMessage("""
-                            No se pudo abrir el instalador automático.
-                            El certificado se guardó en:
-                            ${certFile.absolutePath}
-                            
-                            Instalación manual:
-                            1. Ve a Ajustes > Seguridad > Credenciales de confianza
-                            2. Toca "Instalar desde almacenamiento del dispositivo"
-                            3. Selecciona el archivo certificado
-                            4. Nombra el certificado como "RoRo Interceptor CA"
-                            
-                            NOTA: Android requiere un PIN/patrón/contraseña de bloqueo de pantalla para instalar certificados CA. Si no tienes uno, configúralo primero en Ajustes > Seguridad.
-                        """.trimIndent())
-                        .setPositiveButton("OK", null)
-                        .show()
-                }
+                certFile.writeBytes(certBytes)
+                
+                // Show dialog with options
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("Certificado CA Exportado")
+                    .setMessage("""
+                        ✓ El certificado se guardó en:
+                        Descargas/RoRoInterceptorCA.crt
+                        
+                        Para interceptar tráfico HTTPS, debes instalar este certificado.
+                        
+                        ¿Cómo deseas instalarlo?
+                    """.trimIndent())
+                    .setPositiveButton("Instalador del Sistema") { _, _ ->
+                        try {
+                            val intent = Intent(android.security.KeyChain.ACTION_INSTALL_CA_CERTIFICATE)
+                            intent.putExtra(android.security.KeyChain.EXTRA_CERTIFICATE, certBytes)
+                            intent.putExtra(android.security.KeyChain.EXTRA_NAME, "RoRo Interceptor CA")
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            showManualInstructions(certFile.absolutePath)
+                        }
+                    }
+                    .setNeutralButton("Abrir Archivo") { _, _ ->
+                        openCertificateFile(certFile)
+                    }
+                    .setNegativeButton("Instrucciones Manuales") { _, _ ->
+                        showManualInstructions(certFile.absolutePath)
+                    }
+                    .show()
+                    
+                android.widget.Toast.makeText(
+                    this,
+                    "✓ Certificado guardado en Descargas",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+                    
             } catch (e: Exception) {
                 android.widget.Toast.makeText(
                     this,
@@ -406,6 +420,66 @@ class MainActivity : AppCompatActivity() {
                 ).show()
             }
         }
+    }
+    
+    private fun openCertificateFile(certFile: File) {
+        try {
+            val uri = FileProvider.getUriForFile(
+                this,
+                "${packageName}.fileprovider",
+                certFile
+            )
+            
+            val intent = Intent(Intent.ACTION_VIEW)
+            intent.setDataAndType(uri, "application/x-x509-ca-cert")
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            
+            startActivity(intent)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(
+                this,
+                "No se pudo abrir el archivo. Usa las instrucciones manuales.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+    
+    private fun showManualInstructions(filePath: String) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("📱 Instalación Manual del Certificado")
+            .setMessage("""
+                El certificado se guardó en:
+                $filePath
+                
+                📋 PASOS PARA INSTALAR:
+                
+                1️⃣ Abre Ajustes de tu dispositivo
+                2️⃣ Ve a Seguridad y privacidad
+                3️⃣ Busca "Credenciales" o "Certificados"
+                4️⃣ Toca "Instalar desde almacenamiento"
+                5️⃣ Navega a Descargas
+                6️⃣ Selecciona "RoRoInterceptorCA.crt"
+                7️⃣ Elige "Aplicaciones" o "CA VPN" como tipo
+                8️⃣ Nombra el certificado (ej: "RoRo CA")
+                9️⃣ Confirma con tu PIN/huella
+                
+                ⚠️ IMPORTANTE:
+                • Android requiere bloqueo de pantalla para instalar certificados
+                • Si pide contraseña, déjala vacía y presiona OK
+                • El certificado debe instalarse como "CA de usuario"
+                
+                ℹ️ Para Android 14+, algunos dispositivos requieren:
+                Ajustes > Seguridad > Más ajustes de seguridad > Cifrado y credenciales > Instalar un certificado
+            """.trimIndent())
+            .setPositiveButton("Entendido", null)
+            .setNeutralButton("Copiar Ruta") { _, _ ->
+                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                val clip = ClipData.newPlainText("Ruta del certificado", filePath)
+                clipboard.setPrimaryClip(clip)
+                android.widget.Toast.makeText(this, "Ruta copiada", android.widget.Toast.LENGTH_SHORT).show()
+            }
+            .show()
     }
     
     private fun openRulesActivity() {

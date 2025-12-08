@@ -165,6 +165,11 @@ class CertificateManager(private val context: Context) {
         return certFile
     }
     
+    fun getCACertificateBytes(): ByteArray {
+        // Return raw certificate bytes in DER format
+        return caCert.encoded
+    }
+    
     fun exportCACertificateToPEM(): File {
         // Also export PEM format to Downloads for manual installation
         val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
