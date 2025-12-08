@@ -20,10 +20,13 @@ import io.netty.channel.socket.nio.NioSocketChannel
 import io.netty.handler.codec.http.*
 import io.netty.handler.ssl.SslContextBuilder
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory
+import io.netty.util.ReferenceCountUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.net.InetSocketAddress
+import java.net.URI
+import java.nio.charset.StandardCharsets
 import java.security.cert.X509Certificate
 import java.util.concurrent.ConcurrentHashMap
 
@@ -58,6 +61,7 @@ class ProxyServerV2(
                     .option(ChannelOption.SO_BACKLOG, 128)
                     .option(ChannelOption.SO_REUSEADDR, true)
                     .childOption(ChannelOption.SO_KEEPALIVE, true)
+                    .childOption(ChannelOption.TCP_NODELAY, true)
                 
                 channel = bootstrap.bind("0.0.0.0", port).sync().channel()
                 Log.d(TAG, "Proxy started on 0.0.0.0:$port (accepting external connections)")
@@ -76,13 +80,14 @@ class ProxyServerV2(
         channel?.close()
         workerGroup?.shutdownGracefully()
         bossGroup?.shutdownGracefully()
+        requestCache.clear()
         Log.d(TAG, "Proxy stopped")
     }
     
     inner class ProxyInitializer : ChannelInitializer<SocketChannel>() {
         override fun initChannel(ch: SocketChannel) {
             ch.pipeline().addLast(
-                HttpServerCodec(8192, 8192, 8192 * 2),
+                HttpServerCodec(8192, 65536, 65536),
                 HttpObjectAggregator(10 * 1024 * 1024),
                 ProxyFrontendHandler()
             )
@@ -92,8 +97,12 @@ class ProxyServerV2(
     inner class ProxyFrontendHandler : SimpleChannelInboundHandler<FullHttpRequest>() {
         
         private var outboundChannel: Channel? = null
+        private var targetHost: String? = null
+        private var targetPort: Int = 80
         
         override fun channelRead0(ctx: ChannelHandlerContext, msg: FullHttpRequest) {
+            msg.retain() // Retain for async processing
+            
             if (msg.method() == HttpMethod.CONNECT) {
                 handleConnect(ctx, msg)
             } else {
@@ -101,10 +110,23 @@ class ProxyServerV2(
             }
         }
         
+        override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
+            Log.e(TAG, "Exception in frontend handler", cause)
+            ctx.close()
+        }
+        
+        override fun channelInactive(ctx: ChannelHandlerContext) {
+            outboundChannel?.close()
+            super.channelInactive(ctx)
+        }
+        
         private fun handleConnect(ctx: ChannelHandlerContext, msg: FullHttpRequest) {
             val hostAndPort = msg.uri().split(":")
             val host = hostAndPort[0]
             val port = hostAndPort.getOrNull(1)?.toIntOrNull() ?: 443
+            
+            targetHost = host
+            targetPort = port
             
             Log.d(TAG, "CONNECT to $host:$port")
             
@@ -113,9 +135,10 @@ class ProxyServerV2(
                 HttpVersion.HTTP_1_1,
                 HttpResponseStatus(200, "Connection Established")
             )
+            
             ctx.writeAndFlush(response).addListener { future ->
                 if (future.isSuccess) {
-                    // Remove HTTP handlers
+                    // Remove HTTP codec
                     ctx.pipeline().remove(HttpServerCodec::class.java)
                     ctx.pipeline().remove(HttpObjectAggregator::class.java)
                     ctx.pipeline().remove(this)
@@ -127,82 +150,221 @@ class ProxyServerV2(
                             .forServer(privateKey, cert)
                             .build()
                         
-                        ctx.pipeline().addFirst("ssl", sslContext.newHandler(ctx.alloc()))
+                        val sslHandler = sslContext.newHandler(ctx.alloc())
+                        ctx.pipeline().addFirst("ssl", sslHandler)
                         
-                        // Add HTTP handlers again for HTTPS
-                        ctx.pipeline().addLast(HttpServerCodec())
-                        ctx.pipeline().addLast(HttpObjectAggregator(10 * 1024 * 1024))
-                        ctx.pipeline().addLast(ProxyFrontendHandler())
-                        
-                        Log.d(TAG, "SSL handshake setup for $host")
+                        // Wait for SSL handshake, then add HTTP codecs
+                        sslHandler.handshakeFuture().addListener { sslFuture ->
+                            if (sslFuture.isSuccess) {
+                                ctx.pipeline().addLast(HttpServerCodec())
+                                ctx.pipeline().addLast(HttpObjectAggregator(10 * 1024 * 1024))
+                                ctx.pipeline().addLast(ProxyFrontendHandler())
+                                Log.d(TAG, "SSL handshake complete for $host")
+                            } else {
+                                Log.e(TAG, "SSL handshake failed for $host", sslFuture.cause())
+                                ctx.close()
+                            }
+                        }
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error setting up SSL", e)
+                        Log.e(TAG, "Error setting up SSL for $host", e)
                         ctx.close()
                     }
                 } else {
+                    Log.e(TAG, "Failed to send CONNECT response", future.cause())
                     ctx.close()
                 }
+                ReferenceCountUtil.release(msg)
             }
         }
         
         private fun handleRequest(ctx: ChannelHandlerContext, msg: FullHttpRequest) {
-            val requestId = System.currentTimeMillis() + (0..999).random()
+            val requestId = System.currentTimeMillis() + (0..9999).random()
             
-            val headers = mutableMapOf<String, String>()
-            for (header in msg.headers()) {
-                headers[header.key] = header.value
-            }
-            
-            val bodyBytes = if (msg.content().readableBytes() > 0) {
-                ByteArray(msg.content().readableBytes()).also {
-                    msg.content().getBytes(0, it)
+            try {
+                val headers = mutableMapOf<String, String>()
+                for (header in msg.headers()) {
+                    headers[header.key] = header.value
                 }
-            } else null
-            
-            val uri = msg.uri()
-            val host = headers["Host"] ?: "unknown"
-            val isHttps = ctx.pipeline().get("ssl") != null
-            val scheme = if (isHttps) "https" else "http"
-            
-            var request = AppHttpRequest(
-                id = requestId,
-                timestamp = System.currentTimeMillis(),
-                method = msg.method().name(),
-                url = "$scheme://$host$uri",
-                host = host,
-                path = uri,
-                headers = headers,
-                body = bodyBytes
-            )
-            
-            // Apply request modification rules
-            val matchingRules = rulesManager.findMatchingRules(request.url)
-            for (rule in matchingRules) {
-                when (rule.action) {
-                    RuleAction.BLOCK -> {
-                        Log.d(TAG, "Blocked request: ${request.url}")
-                        val blockedResponse = DefaultFullHttpResponse(
-                            HttpVersion.HTTP_1_1,
-                            HttpResponseStatus.FORBIDDEN
-                        )
-                        ctx.writeAndFlush(blockedResponse).addListener(ChannelFutureListener.CLOSE)
-                        return
+                
+                val bodyBytes = if (msg.content().readableBytes() > 0) {
+                    ByteArray(msg.content().readableBytes()).also {
+                        msg.content().getBytes(0, it)
                     }
-                    RuleAction.MODIFY -> {
-                        rule.modifyRequest?.let { modifyAction ->
-                            request = applyRequestModifications(request, modifyAction)
-                            request.modified = true
+                } else null
+                
+                val uri = msg.uri()
+                val host = targetHost ?: headers["Host"] ?: parseHostFromUri(uri)
+                val isHttps = ctx.pipeline().get("ssl") != null
+                val scheme = if (isHttps) "https" else "http"
+                val port = if (targetPort != 0 && targetPort != 80 && targetPort != 443) ":$targetPort" else ""
+                
+                var fullUrl = if (uri.startsWith("http://") || uri.startsWith("https://")) {
+                    uri
+                } else {
+                    "$scheme://$host$port$uri"
+                }
+                
+                var request = AppHttpRequest(
+                    id = requestId,
+                    timestamp = System.currentTimeMillis(),
+                    method = msg.method().name(),
+                    url = fullUrl,
+                    host = host,
+                    path = uri,
+                    headers = headers,
+                    body = bodyBytes
+                )
+                
+                // Apply request modification rules
+                val matchingRules = rulesManager.findMatchingRules(request.url)
+                for (rule in matchingRules) {
+                    when (rule.action) {
+                        RuleAction.BLOCK -> {
+                            Log.d(TAG, "Blocked request: ${request.url}")
+                            val blockedResponse = DefaultFullHttpResponse(
+                                HttpVersion.HTTP_1_1,
+                                HttpResponseStatus.FORBIDDEN,
+                                Unpooled.copiedBuffer("Blocked by proxy rule", StandardCharsets.UTF_8)
+                            )
+                            blockedResponse.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain")
+                            blockedResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, blockedResponse.content().readableBytes())
+                            ctx.writeAndFlush(blockedResponse).addListener(ChannelFutureListener.CLOSE)
+                            ReferenceCountUtil.release(msg)
+                            return
                         }
+                        RuleAction.MODIFY -> {
+                            rule.modifyRequest?.let { modifyAction ->
+                                request = applyRequestModifications(request, modifyAction)
+                                request.modified = true
+                            }
+                        }
+                        else -> {}
                     }
-                    else -> {}
                 }
+                
+                requestCache[requestId] = request
+                listener.onRequestReceived(request)
+                
+                // Forward request to target server
+                forwardRequest(ctx, request, msg, matchingRules)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error handling request", e)
+                val errorResponse = DefaultFullHttpResponse(
+                    HttpVersion.HTTP_1_1,
+                    HttpResponseStatus.INTERNAL_SERVER_ERROR,
+                    Unpooled.copiedBuffer("Proxy Error: ${e.message}", StandardCharsets.UTF_8)
+                )
+                errorResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, errorResponse.content().readableBytes())
+                ctx.writeAndFlush(errorResponse).addListener(ChannelFutureListener.CLOSE)
+                ReferenceCountUtil.release(msg)
             }
-            
-            requestCache[requestId] = request
-            listener.onRequestReceived(request)
-            
-            // Forward request
-            forwardRequest(ctx, request, msg, matchingRules)
+        }
+        
+        private fun parseHostFromUri(uri: String): String {
+            return try {
+                val url = URI(uri)
+                url.host ?: "unknown"
+            } catch (e: Exception) {
+                "unknown"
+            }
+        }
+        
+        private fun forwardRequest(
+            ctx: ChannelHandlerContext,
+            request: AppHttpRequest,
+            originalMsg: FullHttpRequest,
+            matchingRules: List<ProxyRule>
+        ) {
+            try {
+                val uri = URI(request.url)
+                val targetHost = uri.host
+                val targetPort = if (uri.port > 0) uri.port else if (uri.scheme == "https") 443 else 80
+                val isHttps = uri.scheme == "https"
+                
+                Log.d(TAG, "Forwarding ${request.method} to $targetHost:$targetPort (HTTPS: $isHttps)")
+                
+                val bootstrap = Bootstrap()
+                bootstrap.group(ctx.channel().eventLoop())
+                    .channel(NioSocketChannel::class.java)
+                    .option(ChannelOption.SO_KEEPALIVE, true)
+                    .option(ChannelOption.TCP_NODELAY, true)
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                    .handler(object : ChannelInitializer<SocketChannel>() {
+                        override fun initChannel(ch: SocketChannel) {
+                            if (isHttps) {
+                                // SSL for backend connection
+                                val sslContext = SslContextBuilder
+                                    .forClient()
+                                    .trustManager(InsecureTrustManagerFactory.INSTANCE)
+                                    .build()
+                                ch.pipeline().addLast(sslContext.newHandler(ch.alloc(), targetHost, targetPort))
+                            }
+                            ch.pipeline().addLast(HttpClientCodec())
+                            ch.pipeline().addLast(HttpObjectAggregator(10 * 1024 * 1024))
+                            ch.pipeline().addLast(BackendHandler(ctx, request.id, matchingRules))
+                        }
+                    })
+                
+                bootstrap.connect(targetHost, targetPort).addListener { future: ChannelFuture ->
+                    if (future.isSuccess) {
+                        val outboundCh = future.channel()
+                        
+                        // Build outbound request
+                        val path = if (uri.rawPath.isNullOrEmpty()) "/" else uri.rawPath +
+                                (if (uri.rawQuery != null) "?${uri.rawQuery}" else "")
+                        
+                        val outboundRequest = DefaultFullHttpRequest(
+                            HttpVersion.HTTP_1_1,
+                            HttpMethod.valueOf(request.method),
+                            path
+                        )
+                        
+                        // Copy headers (excluding proxy-specific ones)
+                        for ((key, value) in request.headers) {
+                            if (!key.equals("Proxy-Connection", ignoreCase = true) &&
+                                !key.equals("Proxy-Authorization", ignoreCase = true)) {
+                                outboundRequest.headers().set(key, value)
+                            }
+                        }
+                        
+                        // Ensure Host header
+                        outboundRequest.headers().set(HttpHeaderNames.HOST, targetHost)
+                        outboundRequest.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+                        
+                        // Copy body
+                        if (request.body != null) {
+                            outboundRequest.content().writeBytes(request.body)
+                            outboundRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, request.body.size)
+                        } else {
+                            outboundRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, 0)
+                        }
+                        
+                        Log.d(TAG, "Sending request to $targetHost: ${request.method} $path")
+                        outboundCh.writeAndFlush(outboundRequest)
+                        
+                    } else {
+                        Log.e(TAG, "Failed to connect to $targetHost:$targetPort", future.cause())
+                        val errorResponse = DefaultFullHttpResponse(
+                            HttpVersion.HTTP_1_1,
+                            HttpResponseStatus.BAD_GATEWAY,
+                            Unpooled.copiedBuffer("Failed to connect to target server", StandardCharsets.UTF_8)
+                        )
+                        errorResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, errorResponse.content().readableBytes())
+                        ctx.writeAndFlush(errorResponse).addListener(ChannelFutureListener.CLOSE)
+                    }
+                    ReferenceCountUtil.release(originalMsg)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error forwarding request", e)
+                val errorResponse = DefaultFullHttpResponse(
+                    HttpVersion.HTTP_1_1,
+                    HttpResponseStatus.INTERNAL_SERVER_ERROR,
+                    Unpooled.copiedBuffer("Error: ${e.message}", StandardCharsets.UTF_8)
+                )
+                errorResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, errorResponse.content().readableBytes())
+                ctx.writeAndFlush(errorResponse).addListener(ChannelFutureListener.CLOSE)
+                ReferenceCountUtil.release(originalMsg)
+            }
         }
         
         private fun applyRequestModifications(request: AppHttpRequest, modifyAction: ModifyAction): AppHttpRequest {
@@ -224,10 +386,10 @@ class ProxyServerV2(
             
             // Search & Replace in headers
             modifyAction.searchReplaceHeaders?.forEach { sr ->
-                for (entry in newHeaders.entries) {
-                    val newValue = applySearchReplace(entry.value, sr)
-                    if (newValue != entry.value) {
-                        newHeaders[entry.key] = newValue
+                for ((key, value) in newHeaders.entries.toList()) {
+                    val newValue = applySearchReplace(value, sr)
+                    if (newValue != value) {
+                        newHeaders[key] = newValue
                     }
                 }
             }
@@ -235,208 +397,108 @@ class ProxyServerV2(
             // Process body modifications
             val newBody = when {
                 modifyAction.replaceBody != null -> {
-                    // Complete replacement
                     modifyAction.replaceBody.toByteArray()
                 }
                 modifyAction.searchReplaceBody != null && request.body != null -> {
-                    // Search & Replace in body
                     var bodyText = request.body.toString(Charsets.UTF_8)
                     modifyAction.searchReplaceBody.forEach { sr ->
                         bodyText = applySearchReplace(bodyText, sr)
                     }
                     bodyText.toByteArray()
                 }
-                modifyAction.modifyBody != null && request.body != null -> {
-                    // Legacy: Remove by regex
-                    val originalBody = request.body.toString(Charsets.UTF_8)
-                    originalBody.replace(Regex(modifyAction.modifyBody), "").toByteArray()
-                }
                 else -> request.body
             }
             
             return request.copy(headers = newHeaders, body = newBody)
         }
-        
-        private fun applySearchReplace(text: String, sr: SearchReplace): String {
-            return if (sr.useRegex) {
-                // Use regex
-                val options = if (sr.caseSensitive) setOf<RegexOption>() else setOf(RegexOption.IGNORE_CASE)
-                val regex = Regex(sr.search, options)
-                if (sr.replaceAll) {
-                    regex.replace(text, sr.replace)
-                } else {
-                    regex.replaceFirst(text, sr.replace)
-                }
-            } else {
-                // Simple text replacement
-                if (sr.replaceAll) {
-                    text.replace(sr.search, sr.replace, ignoreCase = !sr.caseSensitive)
-                } else {
-                    text.replaceFirst(sr.search, sr.replace, ignoreCase = !sr.caseSensitive)
-                }
-            }
-        }
-        
-        private fun forwardRequest(
-            ctx: ChannelHandlerContext,
-            request: AppHttpRequest,
-            originalMsg: FullHttpRequest,
-            matchingRules: List<ProxyRule>
-        ) {
-            val bootstrap = Bootstrap()
-            bootstrap.group(ctx.channel().eventLoop())
-                .channel(NioSocketChannel::class.java)
-                .option(ChannelOption.AUTO_READ, false)
-                .option(ChannelOption.SO_KEEPALIVE, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
-                .handler(object : ChannelInitializer<SocketChannel>() {
-                    override fun initChannel(ch: SocketChannel) {
-                        val isHttps = request.url.startsWith("https")
-                        
-                        if (isHttps) {
-                            val sslContext = SslContextBuilder.forClient()
-                                .trustManager(InsecureTrustManagerFactory.INSTANCE)
-                                .build()
-                            ch.pipeline().addLast(sslContext.newHandler(ch.alloc(), request.host, 443))
-                        }
-                        
-                        ch.pipeline().addLast(HttpClientCodec(8192, 8192, 8192 * 2))
-                        ch.pipeline().addLast(HttpObjectAggregator(10 * 1024 * 1024))
-                        ch.pipeline().addLast(ProxyBackendHandler(ctx, request, matchingRules))
-                    }
-                })
-            
-            val port = if (request.url.startsWith("https")) 443 else 80
-            val connectFuture = bootstrap.connect(request.host, port)
-            
-            outboundChannel = connectFuture.channel()
-            connectFuture.addListener(ChannelFutureListener { future ->
-                if (future.isSuccess) {
-                    // Build modified request
-                    val modifiedRequest = DefaultFullHttpRequest(
-                        originalMsg.protocolVersion(),
-                        originalMsg.method(),
-                        request.path
-                    )
-                    
-                    request.headers.let { headers ->
-                        for ((key, value) in headers) {
-                            // Filter out problematic headers
-                            when (key.lowercase()) {
-                                "connection", "proxy-connection", "keep-alive",
-                                "proxy-authenticate", "proxy-authorization",
-                                "te", "trailers", "transfer-encoding", "upgrade" -> {
-                                    // Skip proxy-specific and hop-by-hop headers
-                                }
-                                "alt-svc" -> {
-                                    // Skip Alt-Svc to prevent QUIC
-                                }
-                                else -> modifiedRequest.headers().set(key, value)
-                            }
-                        }
-                        
-                        // Ensure we don't use HTTP/2 or QUIC
-                        modifiedRequest.headers().set(HttpHeaderNames.CONNECTION, "close")
-                        modifiedRequest.headers().remove("upgrade")
-                        modifiedRequest.headers().remove("http2-settings")
-                    }
-                    
-                    request.body?.let {
-                        modifiedRequest.content().writeBytes(it)
-                        modifiedRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, it.size)
-                    }
-                    
-                    future.channel().writeAndFlush(modifiedRequest)
-                    future.channel().read()
-                } else {
-                    Log.e(TAG, "Failed to connect to ${request.host}", future.cause())
-                    ctx.close()
-                }
-            })
-        }
-        
-        override fun channelInactive(ctx: ChannelHandlerContext) {
-            outboundChannel?.close()
-        }
-        
-        override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-            Log.e(TAG, "Exception in frontend handler", cause)
-            ctx.close()
-        }
     }
     
-    inner class ProxyBackendHandler(
-        private val inboundChannel: ChannelHandlerContext,
-        private val request: AppHttpRequest,
+    inner class BackendHandler(
+        private val frontendCtx: ChannelHandlerContext,
+        private val requestId: Long,
         private val matchingRules: List<ProxyRule>
     ) : SimpleChannelInboundHandler<FullHttpResponse>() {
         
         override fun channelRead0(ctx: ChannelHandlerContext, msg: FullHttpResponse) {
-            val headers = mutableMapOf<String, String>()
-            for (header in msg.headers()) {
-                headers[header.key] = header.value
-            }
+            msg.retain()
             
-            val bodyBytes = if (msg.content().readableBytes() > 0) {
-                ByteArray(msg.content().readableBytes()).also {
-                    msg.content().getBytes(0, it)
+            try {
+                val headers = mutableMapOf<String, String>()
+                for (header in msg.headers()) {
+                    headers[header.key] = header.value
                 }
-            } else null
-            
-            var response = AppHttpResponse(
-                statusCode = msg.status().code(),
-                statusMessage = msg.status().reasonPhrase(),
-                headers = headers,
-                body = bodyBytes,
-                timestamp = System.currentTimeMillis()
-            )
-            
-            // Apply response modification rules
-            for (rule in matchingRules) {
-                if (rule.action == RuleAction.MODIFY) {
-                    rule.modifyResponse?.let { modifyAction ->
-                        response = applyResponseModifications(response, modifyAction)
+                
+                val bodyBytes = if (msg.content().readableBytes() > 0) {
+                    ByteArray(msg.content().readableBytes()).also {
+                        msg.content().getBytes(0, it)
                     }
-                }
-            }
-            
-            listener.onResponseReceived(request.id, response)
-            
-            // Send response back to client
-            val clientResponse = DefaultFullHttpResponse(
-                msg.protocolVersion(),
-                msg.status()
-            )
-            
-            response.headers.let { headers ->
-                for ((key, value) in headers) {
-                    // Filter out problematic headers that cause QUIC/HTTP2 issues
-                    when (key.lowercase()) {
-                        "connection", "proxy-connection", "keep-alive",
-                        "proxy-authenticate", "proxy-authorization",
-                        "te", "trailers", "transfer-encoding", "upgrade" -> {
-                            // Skip proxy-specific and hop-by-hop headers
+                } else null
+                
+                var response = AppHttpResponse(
+                    requestId = requestId,
+                    timestamp = System.currentTimeMillis(),
+                    statusCode = msg.status().code(),
+                    statusMessage = msg.status().reasonPhrase(),
+                    headers = headers,
+                    body = bodyBytes
+                )
+                
+                // Apply response modification rules
+                for (rule in matchingRules) {
+                    if (rule.action == RuleAction.MODIFY) {
+                        rule.modifyResponse?.let { modifyAction ->
+                            response = applyResponseModifications(response, modifyAction)
+                            response.modified = true
                         }
-                        "alt-svc" -> {
-                            // Skip Alt-Svc to prevent QUIC protocol switch
-                        }
-                        "http2-settings", "upgrade-insecure-requests" -> {
-                            // Skip HTTP/2 related headers
-                        }
-                        else -> clientResponse.headers().set(key, value)
                     }
                 }
                 
-                // Force HTTP/1.1 and close connection
-                clientResponse.headers().set(HttpHeaderNames.CONNECTION, "close")
+                listener.onResponseReceived(requestId, response)
+                
+                // Build response to client
+                val clientResponse = DefaultFullHttpResponse(
+                    HttpVersion.HTTP_1_1,
+                    HttpResponseStatus.valueOf(response.statusCode),
+                    if (response.body != null) Unpooled.copiedBuffer(response.body) else Unpooled.EMPTY_BUFFER
+                )
+                
+                // Copy response headers (excluding certain headers)
+                for ((key, value) in response.headers) {
+                    if (!key.equals("Transfer-Encoding", ignoreCase = true)) {
+                        clientResponse.headers().set(key, value)
+                    }
+                }
+                
+                // Set content length
+                clientResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, clientResponse.content().readableBytes())
+                clientResponse.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
+                
+                Log.d(TAG, "Sending response to client: ${response.statusCode} (${clientResponse.content().readableBytes()} bytes)")
+                
+                frontendCtx.writeAndFlush(clientResponse).addListener(ChannelFutureListener.CLOSE)
+                ctx.close()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error processing response", e)
+                frontendCtx.close()
+                ctx.close()
+            } finally {
+                ReferenceCountUtil.release(msg)
             }
+        }
+        
+        override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
+            Log.e(TAG, "Exception in backend handler", cause)
             
-            response.body?.let {
-                clientResponse.content().writeBytes(it)
-                clientResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, it.size)
-            }
+            val errorResponse = DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1,
+                HttpResponseStatus.BAD_GATEWAY,
+                Unpooled.copiedBuffer("Backend Error: ${cause.message}", StandardCharsets.UTF_8)
+            )
+            errorResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, errorResponse.content().readableBytes())
             
-            inboundChannel.writeAndFlush(clientResponse).addListener(ChannelFutureListener.CLOSE)
+            frontendCtx.writeAndFlush(errorResponse).addListener(ChannelFutureListener.CLOSE)
+            ctx.close()
         }
         
         private fun applyResponseModifications(response: AppHttpResponse, modifyAction: ModifyAction): AppHttpResponse {
@@ -458,10 +520,10 @@ class ProxyServerV2(
             
             // Search & Replace in headers
             modifyAction.searchReplaceHeaders?.forEach { sr ->
-                for (entry in newHeaders.entries) {
-                    val newValue = applySearchReplace(entry.value, sr)
-                    if (newValue != entry.value) {
-                        newHeaders[entry.key] = newValue
+                for ((key, value) in newHeaders.entries.toList()) {
+                    val newValue = applySearchReplace(value, sr)
+                    if (newValue != value) {
+                        newHeaders[key] = newValue
                     }
                 }
             }
@@ -469,37 +531,30 @@ class ProxyServerV2(
             // Process body modifications
             val newBody = when {
                 modifyAction.replaceBody != null -> {
-                    // Complete replacement
                     modifyAction.replaceBody.toByteArray()
                 }
                 modifyAction.searchReplaceBody != null && response.body != null -> {
-                    // Search & Replace in body
                     var bodyText = response.body.toString(Charsets.UTF_8)
                     modifyAction.searchReplaceBody.forEach { sr ->
                         bodyText = applySearchReplace(bodyText, sr)
                     }
                     bodyText.toByteArray()
                 }
-                modifyAction.modifyBody != null && response.body != null -> {
-                    // Legacy: Remove by regex
-                    val originalBody = response.body.toString(Charsets.UTF_8)
-                    originalBody.replace(Regex(modifyAction.modifyBody), "").toByteArray()
-                }
                 else -> response.body
             }
             
             return response.copy(headers = newHeaders, body = newBody)
         }
-        
-        override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-            Log.e(TAG, "Exception in backend handler", cause)
-            ctx.close()
-        }
     }
     
     private fun applySearchReplace(text: String, sr: SearchReplace): String {
         return if (sr.useRegex) {
-            text.replace(Regex(sr.search), sr.replace)
+            try {
+                text.replace(Regex(sr.search), sr.replace)
+            } catch (e: Exception) {
+                Log.e(TAG, "Invalid regex: ${sr.search}", e)
+                text
+            }
         } else {
             text.replace(sr.search, sr.replace)
         }
