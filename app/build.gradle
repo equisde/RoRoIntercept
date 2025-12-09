@@ -36,11 +36,14 @@ android {
 
     signingConfigs {
         debug {
-            // Use a fixed debug keystore to avoid package conflicts
-            storeFile file("../debug.keystore")
-            storePassword "android"
-            keyAlias "androiddebugkey"
-            keyPassword "android"
+            // Use GitHub Secrets for debug keystore (CI/CD)
+            // Locally, default Android debug keystore will be used
+            if (System.getenv("DEBUG_KEYSTORE_FILE") != null) {
+                storeFile file(System.getenv("DEBUG_KEYSTORE_FILE"))
+                storePassword System.getenv("DEBUG_KEYSTORE_PASSWORD") ?: "android"
+                keyAlias System.getenv("DEBUG_KEY_ALIAS") ?: "androiddebugkey"
+                keyPassword System.getenv("DEBUG_KEY_PASSWORD") ?: "android"
+            }
         }
         release {
             // Release signing only works in CI/CD with GitHub Secrets

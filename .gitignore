@@ -109,3 +109,6 @@ roro-keystore-backup.keystore
 *.keystore
 *.jks
 keystore.properties
+*.keystore
+keystore.properties
+keystore.b64
