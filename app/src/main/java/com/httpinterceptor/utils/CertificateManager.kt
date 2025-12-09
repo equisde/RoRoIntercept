@@ -127,8 +127,8 @@ class CertificateManager(private val context: Context) {
             return Pair(cert, key)
         }
         
-        val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
-        keyPairGenerator.initialize(2048)
+        val keyPairGenerator = KeyPairGenerator.getInstance("RSA", "BC")
+        keyPairGenerator.initialize(2048, SecureRandom())
         val keyPair = keyPairGenerator.generateKeyPair()
         
         val now = Date()
@@ -136,29 +136,68 @@ class CertificateManager(private val context: Context) {
         val notAfter = Date(now.time + 365L * 24 * 60 * 60 * 1000) // 1 year
         
         val issuer = X500Name(caCert.subjectX500Principal.name)
-        val subject = X500Name("CN=$hostname, O=HTTP Interceptor, C=US")
+        val subject = X500Name("CN=$hostname, O=RoRo Devs, OU=Development")
         
         val certBuilder = JcaX509v3CertificateBuilder(
             issuer,
-            BigInteger.valueOf(System.currentTimeMillis()),
+            BigInteger.valueOf(System.currentTimeMillis() + SecureRandom().nextInt(100000)),
             notBefore,
             notAfter,
             subject,
             keyPair.public
         )
         
-        // Add SAN (Subject Alternative Name)
-        val san = GeneralNames(arrayOf(
-            GeneralName(GeneralName.dNSName, hostname),
-            GeneralName(GeneralName.dNSName, "*.$hostname")
-        ))
+        // Add SAN (Subject Alternative Name) - CRITICAL for modern browsers
+        val sanList = mutableListOf<GeneralName>()
+        sanList.add(GeneralName(GeneralName.dNSName, hostname))
+        
+        // Add wildcard if hostname has subdomain
+        if (hostname.contains(".")) {
+            val parts = hostname.split(".")
+            if (parts.size > 2) {
+                // For sub.example.com, add *.example.com
+                val wildcard = "*." + parts.drop(1).joinToString(".")
+                sanList.add(GeneralName(GeneralName.dNSName, wildcard))
+            } else {
+                // For example.com, add *.example.com
+                sanList.add(GeneralName(GeneralName.dNSName, "*.$hostname"))
+            }
+        }
+        
+        // Add IP address if hostname is an IP
+        if (hostname.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
+            sanList.add(GeneralName(GeneralName.iPAddress, hostname))
+        }
+        
+        val san = GeneralNames(sanList.toTypedArray())
         certBuilder.addExtension(Extension.subjectAlternativeName, false, san)
         
+        // Add Extended Key Usage for TLS server authentication
+        certBuilder.addExtension(
+            Extension.extendedKeyUsage,
+            false,
+            org.bouncycastle.asn1.x509.ExtendedKeyUsage(
+                org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_serverAuth
+            )
+        )
+        
+        // Add Key Usage
+        certBuilder.addExtension(
+            Extension.keyUsage,
+            true,
+            org.bouncycastle.asn1.x509.KeyUsage(
+                org.bouncycastle.asn1.x509.KeyUsage.digitalSignature or
+                org.bouncycastle.asn1.x509.KeyUsage.keyEncipherment
+            )
+        )
+        
         val signer = JcaContentSignerBuilder("SHA256withRSA")
+            .setProvider("BC")
             .build(caPrivateKey)
         
         val certHolder = certBuilder.build(signer)
         val cert = JcaX509CertificateConverter()
+            .setProvider("BC")
             .getCertificate(certHolder)
         
         // Cache the certificate
@@ -168,6 +207,14 @@ class CertificateManager(private val context: Context) {
             KEYSTORE_PASSWORD.toCharArray(),
             arrayOf(cert, caCert)
         )
+        
+        Log.d(TAG, "Generated certificate for $hostname with SAN: ${sanList.map { 
+            when(it.tagNo) {
+                GeneralName.dNSName -> "DNS:${it.name}"
+                GeneralName.iPAddress -> "IP:${it.name}"
+                else -> it.name.toString()
+            }
+        }}")
         
         return Pair(cert, keyPair.private)
     }

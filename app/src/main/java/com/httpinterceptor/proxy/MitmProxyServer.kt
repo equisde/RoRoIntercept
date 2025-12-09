@@ -191,7 +191,35 @@ class MitmProxyServer(
         }
         
         private fun handleHttpRequest(ctx: ChannelHandlerContext, fullRequest: FullHttpRequest, requestId: String) {
-            val url = "http://${targetHost ?: ""}${fullRequest.uri()}"
+            // Parse URL from absolute URI
+            val uri = fullRequest.uri()
+            val parsedHost: String
+            val parsedPort: Int
+            val path: String
+            
+            if (uri.startsWith("http://")) {
+                val url = try {
+                    java.net.URL(uri)
+                } catch (e: Exception) {
+                    listener.onLog("[$requestId] Invalid URL: $uri", "ERROR")
+                    sendErrorResponse(ctx, HttpResponseStatus.BAD_REQUEST)
+                    return
+                }
+                parsedHost = url.host
+                parsedPort = if (url.port > 0) url.port else 80
+                path = url.file.ifEmpty { "/" }
+            } else {
+                // Relative URI - get host from headers
+                parsedHost = fullRequest.headers().get(HttpHeaderNames.HOST)?.split(":")?.get(0) ?: run {
+                    listener.onLog("[$requestId] No Host header", "ERROR")
+                    sendErrorResponse(ctx, HttpResponseStatus.BAD_REQUEST)
+                    return
+                }
+                parsedPort = fullRequest.headers().get(HttpHeaderNames.HOST)?.split(":")?.getOrNull(1)?.toIntOrNull() ?: 80
+                path = uri
+            }
+            
+            val fullUrl = "http://$parsedHost:$parsedPort$path"
             val headers = mutableMapOf<String, String>()
             fullRequest.headers().forEach { headers[it.key] = it.value }
             val body = if (fullRequest.content().isReadable) {
@@ -204,15 +232,15 @@ class MitmProxyServer(
                 id = requestCounter.incrementAndGet(),
                 timestamp = System.currentTimeMillis(),
                 method = fullRequest.method().name(),
-                url = url,
-                host = targetHost ?: "",
-                path = fullRequest.uri(),
+                url = fullUrl,
+                host = parsedHost,
+                path = path,
                 headers = headers,
                 body = body
             )
             
             listener.onRequestReceived(httpRequest)
-            forwardHttpRequest(ctx, fullRequest, httpRequest, requestId)
+            forwardHttpRequest(ctx, fullRequest, httpRequest, requestId, parsedHost, parsedPort, path)
         }
         
         private fun handleHttpsRequest(ctx: ChannelHandlerContext, fullRequest: FullHttpRequest, requestId: String) {
@@ -343,51 +371,58 @@ class MitmProxyServer(
             return modified
         }
         
-        private fun forwardHttpRequest(ctx: ChannelHandlerContext, request: FullHttpRequest, httpRequest: com.httpinterceptor.model.HttpRequest, requestId: String) {
-            val url = try {
-                java.net.URL(request.uri())
-            } catch (e: Exception) {
-                listener.onLog("[$requestId] Invalid URL", "ERROR")
-                sendErrorResponse(ctx, HttpResponseStatus.BAD_REQUEST)
-                return
-            }
-            
-            val targetHost = url.host
-            val targetPort = if (url.port > 0) url.port else 80
-            
+        private fun forwardHttpRequest(ctx: ChannelHandlerContext, request: FullHttpRequest, httpRequest: com.httpinterceptor.model.HttpRequest, requestId: String, host: String, port: Int, path: String) {
             val b = Bootstrap()
             b.group(ctx.channel().eventLoop())
                 .channel(NioSocketChannel::class.java)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                .option(ChannelOption.SO_KEEPALIVE, true)
                 .handler(object : ChannelInitializer<SocketChannel>() {
                     override fun initChannel(ch: SocketChannel) {
-                        ch.pipeline().addLast(HttpClientCodec())
-                        ch.pipeline().addLast(HttpObjectAggregator(50 * 1024 * 1024))
-                        ch.pipeline().addLast(HttpBackendHandler(ctx, httpRequest, requestId))
+                        ch.pipeline().addLast("http-codec", HttpClientCodec())
+                        ch.pipeline().addLast("http-aggregator", HttpObjectAggregator(50 * 1024 * 1024))
+                        ch.pipeline().addLast("backend-handler", HttpBackendHandler(ctx, httpRequest, requestId))
                     }
                 })
             
-            val f = b.connect(targetHost, targetPort)
+            listener.onLog("[$requestId] Connecting to $host:$port", "INFO")
+            val f = b.connect(host, port)
             outboundChannel = f.channel()
             
             f.addListener(ChannelFutureListener { future ->
                 if (future.isSuccess) {
-                    listener.onLog("[$requestId] Connected to $targetHost:$targetPort", "SUCCESS")
+                    listener.onLog("[$requestId] Connected to $host:$port", "SUCCESS")
                     
+                    // Create request with relative path
                     val forwardRequest = DefaultFullHttpRequest(
-                        request.protocolVersion(),
+                        HttpVersion.HTTP_1_1,
                         request.method(),
-                        url.file.ifEmpty { "/" },
+                        path,
                         request.content().retain()
                     )
                     
-                    request.headers().forEach { forwardRequest.headers().set(it.key, it.value) }
-                    forwardRequest.headers().set(HttpHeaderNames.HOST, targetHost)
-                    forwardRequest.headers().remove(HttpHeaderNames.PROXY_CONNECTION)
+                    // Copy headers
+                    request.headers().forEach { (key, value) ->
+                        if (key.toLowerCase() !in listOf("proxy-connection", "proxy-authorization")) {
+                            forwardRequest.headers().set(key, value)
+                        }
+                    }
                     
-                    outboundChannel?.writeAndFlush(forwardRequest)
-                    ctx.read()
+                    // Ensure proper Host header
+                    forwardRequest.headers().set(HttpHeaderNames.HOST, if (port == 80) host else "$host:$port")
+                    forwardRequest.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE)
+                    
+                    listener.onLog("[$requestId] Forwarding request: ${request.method()} $path", "INFO")
+                    outboundChannel?.writeAndFlush(forwardRequest)?.addListener(ChannelFutureListener { writeFuture ->
+                        if (writeFuture.isSuccess) {
+                            ctx.read()
+                        } else {
+                            listener.onLog("[$requestId] Failed to forward request", "ERROR")
+                            sendErrorResponse(ctx, HttpResponseStatus.BAD_GATEWAY)
+                        }
+                    })
                 } else {
-                    listener.onLog("[$requestId] Connection failed", "ERROR")
+                    listener.onLog("[$requestId] Connection to $host:$port failed: ${future.cause()?.message}", "ERROR")
                     sendErrorResponse(ctx, HttpResponseStatus.BAD_GATEWAY)
                 }
             })
