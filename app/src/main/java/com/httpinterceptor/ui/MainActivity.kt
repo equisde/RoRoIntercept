@@ -452,30 +452,39 @@ class MainActivity : AppCompatActivity() {
     
     private fun exportCertificate() {
         // Check certificate status first
-        var message = ""
         proxyService?.let { service ->
             val isInstalled = service.isCertificateInstalled()
             val shouldReinstall = service.shouldReinstallCertificate()
             
-            message = if (isInstalled) {
-                "✓ Certificado CA ya está instalado en el sistema.\n\n"
+            var statusMessage = if (isInstalled) {
+                "✓ Certificado CA ya está instalado en el sistema."
             } else {
-                "⚠ Certificado CA NO está instalado en el sistema.\n\n"
+                "⚠ Certificado CA NO está instalado en el sistema."
             }
             
             if (shouldReinstall && isInstalled) {
-                message += "⚠ El certificado está por expirar. Se recomienda reinstalar.\n\n"
+                statusMessage += "\n⚠ El certificado está por expirar. Se recomienda reinstalar."
             }
             
-            message += "Selecciona el formato para exportar:"
+            // Show status first
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Estado del Certificado")
+                .setMessage(statusMessage)
+                .setPositiveButton("Exportar Certificado") { _, _ ->
+                    showFormatSelectionDialog()
+                }
+                .setNegativeButton("Cancelar", null)
+                .show()
+        } ?: run {
+            android.widget.Toast.makeText(this, "Servicio de proxy no disponible", android.widget.Toast.LENGTH_SHORT).show()
         }
-        
-        // Show format selection dialog
+    }
+    
+    private fun showFormatSelectionDialog() {
         val formats = arrayOf("PEM (.pem)", "DER (.der)", "CRT (.crt)", "CER (.cer)", "Todos los formatos")
         
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Exportar Certificado CA")
-            .setMessage(message)
+            .setTitle("Selecciona el Formato")
             .setItems(formats) { _, which ->
                 when (which) {
                     0 -> exportCertificateFormat("PEM")
