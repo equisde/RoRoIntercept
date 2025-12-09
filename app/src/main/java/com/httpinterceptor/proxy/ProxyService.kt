@@ -18,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 class ProxyService : Service() {
     
     private val binder = LocalBinder()
-    private var proxyServer: SimpleProxyServer? = null
+    private var proxyServer: MitmProxyServer? = null
     private val listeners = CopyOnWriteArrayList<ProxyServiceListener>()
     private val requests = mutableListOf<HttpRequest>()
     
@@ -70,7 +70,7 @@ class ProxyService : Service() {
         if (proxyServer != null) return
         
         try {
-            proxyServer = SimpleProxyServer(port, object : SimpleProxyServer.ProxyListener {
+            proxyServer = MitmProxyServer(port, object : MitmProxyServer.ProxyListener {
                 override fun onRequestReceived(request: HttpRequest) {
                     synchronized(requests) {
                         requests.add(0, request)
