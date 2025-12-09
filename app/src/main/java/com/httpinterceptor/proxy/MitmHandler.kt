@@ -105,7 +105,9 @@ class MitmHandler(
                                 try {
                                     // Create app response for logging
                                     val appResponse = AppHttpResponse(
+                                        requestId = requestId,
                                         statusCode = response.status().code(),
+                                        statusMessage = response.status().reasonPhrase(),
                                         headers = response.headers().associate { it.key to it.value },
                                         body = if (response.content().isReadable) {
                                             ByteArray(response.content().readableBytes()).also {
