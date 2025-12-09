@@ -1,8 +1,7 @@
 package com.httpinterceptor.proxy
 
 import android.util.Log
-import com.httpinterceptor.data.HttpRequest
-import com.httpinterceptor.data.ProxyRule
+import com.httpinterceptor.model.*
 import com.httpinterceptor.utils.CertificateManager
 import io.netty.bootstrap.ServerBootstrap
 import io.netty.channel.*
@@ -188,21 +187,21 @@ class MitmProxyServer(
         
         private fun handleHttpRequest(ctx: ChannelHandlerContext, request: FullHttpRequest, requestId: String) {
             // Create request object
+            val fullUrl = if (isConnectRequest && targetHost != null) {
+                "https://$targetHost${request.uri()}"
+            } else {
+                request.uri()
+            }
+            
             val httpRequest = HttpRequest(
-                id = requestId,
-                method = request.method().name(),
-                url = if (isConnectRequest && targetHost != null) {
-                    "https://$targetHost${request.uri()}"
-                } else {
-                    request.uri()
-                },
-                headers = request.headers().associate { it.key to it.value }.toMutableMap(),
-                body = request.content().toString(Charsets.UTF_8),
+                id = requestCounter.incrementAndGet(),
                 timestamp = System.currentTimeMillis(),
-                isHttps = isConnectRequest,
-                statusCode = 0,
-                responseHeaders = mutableMapOf(),
-                responseBody = ""
+                method = request.method().name(),
+                url = fullUrl,
+                host = targetHost ?: request.headers().get("Host") ?: "",
+                path = request.uri(),
+                headers = request.headers().associate { it.key to it.value },
+                body = request.content().toString(Charsets.UTF_8).toByteArray()
             )
             
             activeConnections[requestId] = httpRequest
@@ -220,49 +219,89 @@ class MitmProxyServer(
         }
         
         private fun applyRequestRules(request: HttpRequest): HttpRequest {
-            var modified = request.copy()
+            var modifiedHeaders = request.headers.toMutableMap()
+            var modifiedBody = request.body
             var wasModified = false
             
             for (rule in rules) {
-                if (!rule.enabled) continue
+                if (!rule.enabled || rule.action != RuleAction.MODIFY) continue
                 
-                val urlMatches = rule.urlPattern.isEmpty() || 
-                    request.url.contains(rule.urlPattern, ignoreCase = true)
+                // Check if URL matches
+                val urlMatches = when (rule.matchType) {
+                    MatchType.CONTAINS -> request.url.contains(rule.urlPattern, ignoreCase = true)
+                    MatchType.REGEX -> request.url.matches(Regex(rule.urlPattern))
+                    MatchType.EXACT -> request.url == rule.urlPattern
+                    MatchType.STARTS_WITH -> request.url.startsWith(rule.urlPattern)
+                    MatchType.ENDS_WITH -> request.url.endsWith(rule.urlPattern)
+                }
                 
                 if (!urlMatches) continue
                 
-                when (rule.target) {
-                    "request" -> {
-                        when (rule.action) {
-                            "modify_headers" -> {
-                                rule.modifyHeaders.forEach { (key, value) ->
-                                    modified.headers[key] = value
-                                    wasModified = true
-                                }
+                // Apply request modifications
+                rule.modifyRequest?.let { modifyAction ->
+                    // Modify headers
+                    modifyAction.modifyHeaders?.forEach { (key, value) ->
+                        modifiedHeaders[key] = value
+                        wasModified = true
+                    }
+                    
+                    // Remove headers
+                    modifyAction.removeHeaders?.forEach { key ->
+                        if (modifiedHeaders.remove(key) != null) {
+                            wasModified = true
+                        }
+                    }
+                    
+                    // Search and replace in headers
+                    modifyAction.searchReplaceHeaders?.forEach { sr ->
+                        val newHeaders = mutableMapOf<String, String>()
+                        modifiedHeaders.forEach { (key, value) ->
+                            val newValue = if (sr.useRegex) {
+                                val regex = if (sr.caseSensitive) Regex(sr.search) else Regex(sr.search, RegexOption.IGNORE_CASE)
+                                if (sr.replaceAll) value.replace(regex, sr.replace) else value.replaceFirst(regex, sr.replace)
+                            } else {
+                                if (sr.replaceAll) value.replace(sr.search, sr.replace, !sr.caseSensitive) 
+                                else value.replaceFirst(sr.search, sr.replace, !sr.caseSensitive)
                             }
-                            "modify_body" -> {
-                                if (rule.searchPattern.isNotEmpty()) {
-                                    val newBody = if (rule.useRegex) {
-                                        modified.body.replace(Regex(rule.searchPattern), rule.replaceValue)
-                                    } else {
-                                        modified.body.replace(rule.searchPattern, rule.replaceValue)
-                                    }
-                                    if (newBody != modified.body) {
-                                        modified = modified.copy(body = newBody)
-                                        wasModified = true
-                                    }
-                                }
-                            }
-                            "block" -> {
-                                modified = modified.copy(blocked = true)
-                                wasModified = true
-                            }
+                            newHeaders[key] = newValue
+                            if (newValue != value) wasModified = true
+                        }
+                        modifiedHeaders = newHeaders.toMutableMap()
+                    }
+                    
+                    // Replace entire body
+                    modifyAction.replaceBody?.let { newBody ->
+                        modifiedBody = newBody.toByteArray()
+                        wasModified = true
+                    }
+                    
+                    // Search and replace in body
+                    modifyAction.searchReplaceBody?.forEach { sr ->
+                        val bodyStr = modifiedBody?.toString(Charsets.UTF_8) ?: ""
+                        val newBody = if (sr.useRegex) {
+                            val regex = if (sr.caseSensitive) Regex(sr.search) else Regex(sr.search, RegexOption.IGNORE_CASE)
+                            if (sr.replaceAll) bodyStr.replace(regex, sr.replace) else bodyStr.replaceFirst(regex, sr.replace)
+                        } else {
+                            if (sr.replaceAll) bodyStr.replace(sr.search, sr.replace, !sr.caseSensitive)
+                            else bodyStr.replaceFirst(sr.search, sr.replace, !sr.caseSensitive)
+                        }
+                        if (newBody != bodyStr) {
+                            modifiedBody = newBody.toByteArray()
+                            wasModified = true
                         }
                     }
                 }
             }
             
-            return modified.copy(modified = wasModified)
+            return if (wasModified) {
+                request.copy(
+                    headers = modifiedHeaders,
+                    body = modifiedBody,
+                    modified = true
+                )
+            } else {
+                request
+            }
         }
         
         private fun forwardRequest(ctx: ChannelHandlerContext, request: HttpRequest, requestId: String) {
@@ -293,11 +332,16 @@ class MitmProxyServer(
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, responseBody.length)
             response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
             
-            request.statusCode = 200
-            request.responseHeaders["Content-Type"] = "text/html; charset=UTF-8"
-            request.responseBody = responseBody
+            val httpResponse = HttpResponse(
+                requestId = request.id,
+                statusCode = 200,
+                statusMessage = "OK",
+                headers = mapOf("Content-Type" to "text/html; charset=UTF-8"),
+                body = responseBody.toByteArray(),
+                timestamp = System.currentTimeMillis()
+            )
             
-            listener.onResponseReceived(request)
+            listener.onResponseReceived(request.copy(response = httpResponse))
             listener.onLog("[$requestId] Response sent: 200 OK", "RESPONSE")
             
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE)
@@ -313,10 +357,9 @@ class MitmProxyServer(
         
         private fun createSslContext(hostname: String): SslContext {
             // Generate certificate for this specific hostname
-            val cert = certificateManager.generateCertificate(hostname)
-            val privateKey = certificateManager.getCaPrivateKey()
+            val certPair = certificateManager.generateServerCertificate(hostname)
             
-            return SslContextBuilder.forServer(privateKey, cert)
+            return SslContextBuilder.forServer(certPair.second, arrayOf(certPair.first))
                 .build()
         }
         
