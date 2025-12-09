@@ -70,7 +70,7 @@ class ProxyService : Service() {
         if (proxyServer != null) return
         
         try {
-            proxyServer = MitmProxyServer(port, object : MitmProxyServer.ProxyListener {
+            proxyServer = MitmProxyServer(port, certManager, object : MitmProxyServer.ProxyListener {
                 override fun onRequestReceived(request: HttpRequest) {
                     synchronized(requests) {
                         requests.add(0, request)
@@ -81,18 +81,30 @@ class ProxyService : Service() {
                     listeners.forEach { it.onRequestReceived(request) }
                 }
                 
-                override fun onResponseReceived(requestId: Long, response: HttpResponse) {
-                    synchronized(requests) {
-                        val request = requests.find { it.id == requestId }
-                        request?.response = response
+                override fun onRequestModified(request: HttpRequest) {
+                    // Optional callback
+                }
+                
+                override fun onResponseReceived(request: HttpRequest) {
+                    listeners.forEach { 
+                        if (request.response != null) {
+                            it.onResponseReceived(request.id, request.response!!)
+                        }
                     }
-                    listeners.forEach { it.onResponseReceived(requestId, response) }
                 }
                 
                 override fun onError(error: String) {
                     Log.e(TAG, "Proxy error: $error")
                 }
-            }, certManager)
+                
+                override fun onLog(message: String, level: String) {
+                    when (level) {
+                        "ERROR" -> Log.e(TAG, message)
+                        "WARN" -> Log.w(TAG, message)
+                        else -> Log.d(TAG, message)
+                    }
+                }
+            })
             
             proxyServer?.start()
             
