@@ -51,15 +51,20 @@ class SimpleProxyServer(
                     .childHandler(ProxyInitializer())
                     .option(ChannelOption.SO_BACKLOG, 128)
                     .childOption(ChannelOption.SO_KEEPALIVE, true)
-                    .childOption(ChannelOption.AUTO_READ, false)
+                    .childOption(ChannelOption.TCP_NODELAY, true)
+                    .childOption(ChannelOption.AUTO_READ, true)
                 
-                channel = bootstrap.bind("0.0.0.0", port).sync().channel()
-                Log.d(TAG, "✅ Proxy started on 0.0.0.0:$port")
+                val bindFuture = bootstrap.bind("0.0.0.0", port).sync()
+                channel = bindFuture.channel()
+                
+                val localAddress = channel?.localAddress()
+                Log.d(TAG, "✅ Proxy started successfully on $localAddress")
+                listener.onError("✅ Proxy listening on 0.0.0.0:$port")
                 
                 channel?.closeFuture()?.sync()
             } catch (e: Exception) {
                 Log.e(TAG, "❌ Error starting proxy", e)
-                listener.onError("Failed to start proxy: ${e.message}")
+                listener.onError("❌ Failed to start proxy: ${e.message}")
             } finally {
                 stop()
             }
@@ -87,7 +92,18 @@ class SimpleProxyServer(
         private var targetHost: String? = null
         private var targetPort: Int = 80
         
+        override fun channelActive(ctx: ChannelHandlerContext) {
+            val clientAddress = ctx.channel().remoteAddress()
+            Log.d(TAG, "📥 New connection from: $clientAddress")
+            listener.onError("📥 Connection from: $clientAddress")
+            super.channelActive(ctx)
+        }
+        
         override fun channelRead0(ctx: ChannelHandlerContext, request: FullHttpRequest) {
+            val clientAddr = ctx.channel().remoteAddress()
+            Log.d(TAG, "📨 ${request.method()} ${request.uri()} from $clientAddr")
+            listener.onError("📨 ${request.method()} ${request.uri()}")
+            
             when {
                 request.method() == HttpMethod.CONNECT -> handleConnect(ctx, request)
                 else -> handleHttpRequest(ctx, request)
@@ -98,8 +114,14 @@ class SimpleProxyServer(
             ctx.flush()
         }
         
+        override fun channelInactive(ctx: ChannelHandlerContext) {
+            Log.d(TAG, "📤 Connection closed: ${ctx.channel().remoteAddress()}")
+            super.channelInactive(ctx)
+        }
+        
         override fun exceptionCaught(ctx: ChannelHandlerContext, cause: Throwable) {
-            Log.e(TAG, "Exception: ${cause.message}")
+            Log.e(TAG, "❌ Exception: ${cause.message}", cause)
+            listener.onError("❌ Error: ${cause.message}")
             ctx.close()
         }
         
@@ -113,6 +135,7 @@ class SimpleProxyServer(
             targetPort = port
             
             Log.d(TAG, "🔐 CONNECT: $host:$port")
+            listener.onError("🔐 HTTPS CONNECT: $host:$port")
             
             // Send Connection Established
             val response = DefaultFullHttpResponse(
@@ -120,8 +143,11 @@ class SimpleProxyServer(
                 HttpResponseStatus(200, "Connection Established")
             )
             
-            ctx.writeAndFlush(response).addListener { future ->
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener { future ->
                 if (future.isSuccess) {
+                    Log.d(TAG, "✅ Connection established to $host:$port")
+                    listener.onError("✅ SSL tunnel to $host:$port established")
+                    
                     // Remove HTTP handlers
                     ctx.pipeline().remove(HttpServerCodec::class.java)
                     ctx.pipeline().remove(HttpObjectAggregator::class.java)
@@ -130,9 +156,11 @@ class SimpleProxyServer(
                     // Add SSL
                     setupSSL(ctx, host)
                 } else {
+                    Log.e(TAG, "❌ Failed to establish connection to $host:$port")
+                    listener.onError("❌ Failed SSL tunnel to $host:$port")
                     ctx.close()
                 }
-            }
+            })
         }
         
         private fun setupSSL(ctx: ChannelHandlerContext, host: String) {
@@ -196,8 +224,9 @@ class SimpleProxyServer(
                     body = body
                 )
                 
-                Log.d(TAG, "📤 ${appRequest.method} ${appRequest.url}")
+                Log.d(TAG, "📤 Forwarding: ${appRequest.method} ${appRequest.url}")
                 listener.onRequestReceived(appRequest)
+                listener.onError("📤 Request: ${appRequest.method} ${appRequest.url}")
                 requestCache[requestId] = appRequest
                 
                 // Forward to target
