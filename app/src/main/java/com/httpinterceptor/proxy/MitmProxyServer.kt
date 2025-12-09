@@ -27,15 +27,15 @@ class MitmProxyServer(
     private var channel: Channel? = null
     
     private val requestCounter = AtomicLong(0)
-    private val activeConnections = ConcurrentHashMap<String, HttpRequest>()
+    private val activeConnections = ConcurrentHashMap<String, com.httpinterceptor.model.HttpRequest>()
     
     @Volatile
     private var rules = listOf<ProxyRule>()
     
     interface ProxyListener {
-        fun onRequestReceived(request: HttpRequest)
-        fun onRequestModified(request: HttpRequest)
-        fun onResponseReceived(request: HttpRequest)
+        fun onRequestReceived(request: com.httpinterceptor.model.HttpRequest)
+        fun onRequestModified(request: com.httpinterceptor.model.HttpRequest)
+        fun onResponseReceived(request: com.httpinterceptor.model.HttpRequest)
         fun onError(error: String)
         fun onLog(message: String, level: String = "INFO")
     }
@@ -193,7 +193,7 @@ class MitmProxyServer(
                 request.uri()
             }
             
-            val httpRequest = HttpRequest(
+            val httpRequest = com.httpinterceptor.model.HttpRequest(
                 id = requestCounter.incrementAndGet(),
                 timestamp = System.currentTimeMillis(),
                 method = request.method().name(),
@@ -218,7 +218,7 @@ class MitmProxyServer(
             forwardRequest(ctx, modifiedRequest, requestId)
         }
         
-        private fun applyRequestRules(request: HttpRequest): HttpRequest {
+        private fun applyRequestRules(request: com.httpinterceptor.model.HttpRequest): com.httpinterceptor.model.HttpRequest {
             var modifiedHeaders = request.headers.toMutableMap()
             var modifiedBody = request.body
             var wasModified = false
@@ -253,9 +253,9 @@ class MitmProxyServer(
                     }
                     
                     // Search and replace in headers
-                    modifyAction.searchReplaceHeaders?.forEach { sr ->
+                    modifyAction.searchReplaceHeaders?.forEach { sr: SearchReplace ->
                         val newHeaders = mutableMapOf<String, String>()
-                        modifiedHeaders.forEach { (key, value) ->
+                        modifiedHeaders.forEach { (key: String, value: String) ->
                             val newValue = if (sr.useRegex) {
                                 val regex = if (sr.caseSensitive) Regex(sr.search) else Regex(sr.search, RegexOption.IGNORE_CASE)
                                 if (sr.replaceAll) value.replace(regex, sr.replace) else value.replaceFirst(regex, sr.replace)
@@ -304,7 +304,7 @@ class MitmProxyServer(
             }
         }
         
-        private fun forwardRequest(ctx: ChannelHandlerContext, request: HttpRequest, requestId: String) {
+        private fun forwardRequest(ctx: ChannelHandlerContext, request: com.httpinterceptor.model.HttpRequest, requestId: String) {
             // For now, send a simple response
             // In production, this should forward to the actual target server
             
@@ -332,7 +332,7 @@ class MitmProxyServer(
             response.headers().set(HttpHeaderNames.CONTENT_LENGTH, responseBody.length)
             response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
             
-            val httpResponse = HttpResponse(
+            val httpResponse = com.httpinterceptor.model.HttpResponse(
                 requestId = request.id,
                 statusCode = 200,
                 statusMessage = "OK",
@@ -359,7 +359,7 @@ class MitmProxyServer(
             // Generate certificate for this specific hostname
             val certPair = certificateManager.generateServerCertificate(hostname)
             
-            return SslContextBuilder.forServer(certPair.second, arrayOf(certPair.first))
+            return SslContextBuilder.forServer(certPair.first, certPair.second)
                 .build()
         }
         

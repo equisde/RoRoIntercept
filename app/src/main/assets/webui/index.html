@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoRo Interceptor - Professional HTTPS Proxy</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary-color: #2563eb;
+            --secondary-color: #64748b;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #cbd5e1;
+            --border-color: #475569;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Header */
+        .app-header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .app-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .version-badge {
+            background: var(--bg-tertiary);
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.375rem;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .header-center {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+        }
+
+        .proxy-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-tertiary);
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 0.75rem;
+            height: 0.75rem;
+            border-radius: 50%;
+            background: var(--danger-color);
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.active {
+            background: var(--success-color);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .header-right {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 0.625rem 1.25rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.875rem;
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        .btn-sm {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.75rem;
+        }
+
+        /* Main Content */
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 250px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-nav {
+            padding: 1rem;
+        }
+
+        .nav-item {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: transparent;
+            border: none;
+            border-radius: 0.5rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .nav-item:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .nav-item.active {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .icon {
+            width: 1.25rem;
+            height: 1.25rem;
+            fill: currentColor;
+        }
+
+        .sidebar-footer {
+            margin-top: auto;
+            padding: 1rem;
+        }
+
+        .stats-box {
+            background: var(--bg-tertiary);
+            padding: 1rem;
+            border-radius: 0.5rem;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.75rem;
+        }
+
+        .stat-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .stat-value {
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+
+        /* Content Area */
+        .content-area {
+            flex: 1;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .view-container {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+        }
+
+        .view-container.active {
+            display: flex;
+        }
+
+        .view-header {
+            padding: 1.5rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .view-header h2 {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 0.75rem;
+        }
+
+        .filter-input, .filter-select {
+            padding: 0.5rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        .filter-input {
+            min-width: 200px;
+        }
+
+        /* Traffic View */
+        .traffic-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .request-list {
+            width: 40%;
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+        }
+
+        .request-item {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .request-item:hover {
+            background: var(--bg-secondary);
+        }
+
+        .request-item.selected {
+            background: var(--bg-tertiary);
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .request-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .method-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .method-GET { background: var(--success-color); color: white; }
+        .method-POST { background: var(--primary-color); color: white; }
+        .method-PUT { background: var(--warning-color); color: white; }
+        .method-DELETE { background: var(--danger-color); color: white; }
+
+        .status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .status-2xx { background: var(--success-color); color: white; }
+        .status-3xx { background: var(--primary-color); color: white; }
+        .status-4xx { background: var(--warning-color); color: white; }
+        .status-5xx { background: var(--danger-color); color: white; }
+
+        .request-url {
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .request-time {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .request-details {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .details-section {
+            margin-bottom: 2rem;
+        }
+
+        .details-section h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: var(--text-secondary);
+        }
+
+        .details-grid {
+            display: grid;
+            gap: 0.75rem;
+        }
+
+        .detail-item {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            gap: 1rem;
+        }
+
+        .detail-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .detail-value {
+            font-size: 0.875rem;
+            color: var(--text-primary);
+            font-family: 'Courier New', monospace;
+        }
+
+        .code-block {
+            background: var(--bg-tertiary);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* Logs View */
+        .logs-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+
+        .log-entry {
+            padding: 0.75rem 1rem;
+            border-left: 3px solid transparent;
+            border-bottom: 1px solid var(--border-color);
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+        }
+
+        .log-entry.INFO { border-left-color: var(--success-color); }
+        .log-entry.WARN { border-left-color: var(--warning-color); }
+        .log-entry.ERROR { border-left-color: var(--danger-color); }
+        .log-entry.DEBUG { border-left-color: var(--secondary-color); }
+
+        .log-timestamp {
+            color: var(--text-secondary);
+            margin-right: 1rem;
+        }
+
+        .log-level {
+            font-weight: 700;
+            margin-right: 1rem;
+        }
+
+        .log-message {
+            color: var(--text-primary);
+        }
+
+        /* Rules View */
+        .rules-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .rule-card {
+            background: var(--bg-secondary);
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .rule-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .rule-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 50px;
+            height: 24px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .toggle-switch.active {
+            background: var(--success-color);
+        }
+
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: left 0.2s;
+        }
+
+        .toggle-switch.active::after {
+            left: 28px;
+        }
+
+        /* Settings View */
+        .settings-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+        }
+
+        .settings-section {
+            background: var(--bg-secondary);
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .settings-section h3 {
+            font-size: 1rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .setting-item {
+            margin-bottom: 1rem;
+        }
+
+        .setting-item label {
+            display: block;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .setting-input {
+            width: 100%;
+            padding: 0.5rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            color: var(--text-primary);
+        }
+
+        /* Empty State */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .empty-icon {
+            width: 4rem;
+            height: 4rem;
+            fill: var(--text-secondary);
+            opacity: 0.5;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state p {
+            margin-bottom: 0.5rem;
+            font-size: 1.125rem;
+        }
+
+        .empty-state small {
+            font-size: 0.875rem;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--secondary-color);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 200px;
+            }
+
+            .request-list {
+                width: 100%;
+                border-right: none;
+            }
+
+            .request-details {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: var(--bg-primary);
+                z-index: 1000;
+                display: none;
+            }
+
+            .request-details.show {
+                display: block;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-left">
+                <h1 class="app-title">🔒 RoRo Interceptor</h1>
+                <span class="version-badge">v1.0</span>
+            </div>
+            <div class="header-center">
+                <div class="proxy-status">
+                    <div class="status-indicator" id="statusIndicator"></div>
+                    <span id="proxyStatus">Checking...</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-primary" id="toggleProxyBtn">
+                    <span id="toggleProxyText">Start Proxy</span>
+                </button>
+                <button class="btn btn-secondary" id="clearAllBtn">Clear All</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <nav class="sidebar-nav">
+                    <button class="nav-item active" data-view="traffic">
+                        <svg class="icon" viewBox="0 0 24 24"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>
+                        Traffic
+                    </button>
+                    <button class="nav-item" data-view="logs">
+                        <svg class="icon" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
+                        Logs
+                    </button>
+                </nav>
+                
+                <div class="sidebar-footer">
+                    <div class="stats-box">
+                        <div class="stat-item">
+                            <span class="stat-label">Total Requests</span>
+                            <span class="stat-value" id="totalRequests">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Active Connections</span>
+                            <span class="stat-value" id="activeConnections">0</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Content Area -->
+            <main class="content-area">
+                <!-- Traffic View -->
+                <div id="trafficView" class="view-container active">
+                    <div class="view-header">
+                        <h2>HTTP/HTTPS Traffic</h2>
+                        <div class="filter-bar">
+                            <input type="text" class="filter-input" id="filterUrl" placeholder="Filter by URL...">
+                            <select class="filter-select" id="filterMethod">
+                                <option value="">All Methods</option>
+                                <option value="GET">GET</option>
+                                <option value="POST">POST</option>
+                                <option value="PUT">PUT</option>
+                                <option value="DELETE">DELETE</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="traffic-container">
+                        <div class="request-list" id="requestList">
+                            <div class="empty-state">
+                                <svg class="empty-icon" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                                <p>No requests captured yet</p>
+                                <small>Start the proxy and make some requests</small>
+                            </div>
+                        </div>
+                        
+                        <div class="request-details" id="requestDetails">
+                            <div class="empty-state">
+                                <p>Select a request to view details</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Logs View -->
+                <div id="logsView" class="view-container">
+                    <div class="view-header">
+                        <h2>Proxy Logs</h2>
+                        <div class="filter-bar">
+                            <select class="filter-select" id="logLevel">
+                                <option value="">All Levels</option>
+                                <option value="INFO">INFO</option>
+                                <option value="WARN">WARNING</option>
+                                <option value="ERROR">ERROR</option>
+                                <option value="DEBUG">DEBUG</option>
+                            </select>
+                            <button class="btn btn-secondary btn-sm" id="clearLogsBtn">Clear</button>
+                        </div>
+                    </div>
+                    
+                    <div class="logs-container" id="logsContainer">
+                        <div class="empty-state">
+                            <p>No logs available</p>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let isProxyRunning = false;
+        let requests = [];
+        let logs = [];
+        let selectedRequestId = null;
+
+        // WebSocket connection
+        let ws = null;
+
+        function connectWebSocket() {
+            ws = new WebSocket('ws://' + window.location.hostname + ':' + window.location.port + '/ws');
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                addLog('WebSocket connected', 'INFO');
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleWebSocketMessage(data);
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                addLog('WebSocket error: ' + error, 'ERROR');
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                addLog('WebSocket disconnected', 'WARN');
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            switch(data.type) {
+                case 'status':
+                    updateProxyStatus(data.running);
+                    break;
+                case 'request':
+                    addRequest(data.data);
+                    break;
+                case 'response':
+                    updateRequest(data.data);
+                    break;
+                case 'log':
+                    addLog(data.message, data.level);
+                    break;
+            }
+        }
+
+        function updateProxyStatus(running) {
+            isProxyRunning = running;
+            const statusIndicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('proxyStatus');
+            const toggleBtn = document.getElementById('toggleProxyText');
+            
+            if (running) {
+                statusIndicator.classList.add('active');
+                statusText.textContent = 'Proxy Running';
+                toggleBtn.textContent = 'Stop Proxy';
+            } else {
+                statusIndicator.classList.remove('active');
+                statusText.textContent = 'Proxy Stopped';
+                toggleBtn.textContent = 'Start Proxy';
+            }
+        }
+
+        function addRequest(request) {
+            requests.push(request);
+            document.getElementById('totalRequests').textContent = requests.length;
+            renderRequests();
+        }
+
+        function updateRequest(response) {
+            const request = requests.find(r => r.id === response.requestId);
+            if (request) {
+                request.response = response;
+                renderRequests();
+                if (selectedRequestId === request.id) {
+                    showRequestDetails(request);
+                }
+            }
+        }
+
+        function renderRequests() {
+            const container = document.getElementById('requestList');
+            const filterUrl = document.getElementById('filterUrl').value.toLowerCase();
+            const filterMethod = document.getElementById('filterMethod').value;
+            
+            const filtered = requests.filter(r => {
+                const urlMatch = !filterUrl || r.url.toLowerCase().includes(filterUrl);
+                const methodMatch = !filterMethod || r.method === filterMethod;
+                return urlMatch && methodMatch;
+            });
+
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>No requests match filters</p></div>';
+                return;
+            }
+
+            container.innerHTML = filtered.map(r => `
+                <div class="request-item ${selectedRequestId === r.id ? 'selected' : ''}" onclick="selectRequest(${r.id})">
+                    <div class="request-header">
+                        <span class="method-badge method-${r.method}">${r.method}</span>
+                        ${r.response ? `<span class="status-badge status-${Math.floor(r.response.statusCode/100)}xx">${r.response.statusCode}</span>` : ''}
+                    </div>
+                    <div class="request-url" title="${r.url}">${r.url}</div>
+                    <div class="request-time">${new Date(r.timestamp).toLocaleTimeString()}</div>
+                </div>
+            `).join('');
+        }
+
+        function selectRequest(id) {
+            selectedRequestId = id;
+            const request = requests.find(r => r.id === id);
+            if (request) {
+                showRequestDetails(request);
+                renderRequests();
+            }
+        }
+
+        function showRequestDetails(request) {
+            const container = document.getElementById('requestDetails');
+            
+            const headersHtml = Object.entries(request.headers)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join('\n');
+            
+            const responseHtml = request.response ? `
+                <div class="details-section">
+                    <h3>Response</h3>
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Status:</span>
+                            <span class="detail-value">${request.response.statusCode} ${request.response.statusMessage}</span>
+                        </div>
+                    </div>
+                    <h4 style="margin: 1rem 0 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Headers</h4>
+                    <div class="code-block">${Object.entries(request.response.headers).map(([k, v]) => `${k}: ${v}`).join('\n')}</div>
+                    ${request.response.body ? `
+                        <h4 style="margin: 1rem 0 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Body</h4>
+                        <div class="code-block">${escapeHtml(new TextDecoder().decode(new Uint8Array(request.response.body)))}</div>
+                    ` : ''}
+                </div>
+            ` : '<p style="color: var(--text-secondary);">No response yet...</p>';
+            
+            container.innerHTML = `
+                <div class="details-section">
+                    <h3>Request Details</h3>
+                    <div class="details-grid">
+                        <div class="detail-item">
+                            <span class="detail-label">Method:</span>
+                            <span class="detail-value">${request.method}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">URL:</span>
+                            <span class="detail-value">${request.url}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Host:</span>
+                            <span class="detail-value">${request.host}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Time:</span>
+                            <span class="detail-value">${new Date(request.timestamp).toLocaleString()}</span>
+                        </div>
+                    </div>
+                    <h4 style="margin: 1rem 0 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Headers</h4>
+                    <div class="code-block">${headersHtml}</div>
+                    ${request.body ? `
+                        <h4 style="margin: 1rem 0 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Body</h4>
+                        <div class="code-block">${escapeHtml(new TextDecoder().decode(new Uint8Array(request.body)))}</div>
+                    ` : ''}
+                </div>
+                ${responseHtml}
+            `;
+        }
+
+        function addLog(message, level = 'INFO') {
+            const timestamp = new Date().toLocaleTimeString();
+            logs.push({ timestamp, level, message });
+            
+            const container = document.getElementById('logsContainer');
+            const logLevel = document.getElementById('logLevel').value;
+            
+            const filtered = logs.filter(l => !logLevel || l.level === logLevel);
+            
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="empty-state"><p>No logs match filter</p></div>';
+                return;
+            }
+            
+            container.innerHTML = filtered.map(l => `
+                <div class="log-entry ${l.level}">
+                    <span class="log-timestamp">${l.timestamp}</span>
+                    <span class="log-level">${l.level}</span>
+                    <span class="log-message">${l.message}</span>
+                </div>
+            `).join('');
+            
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Event Listeners
+        document.getElementById('toggleProxyBtn').addEventListener('click', () => {
+            fetch('/api/proxy/toggle', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => updateProxyStatus(data.running))
+                .catch(e => addLog('Error toggling proxy: ' + e, 'ERROR'));
+        });
+
+        document.getElementById('clearAllBtn').addEventListener('click', () => {
+            requests = [];
+            selectedRequestId = null;
+            document.getElementById('totalRequests').textContent = '0';
+            renderRequests();
+            document.getElementById('requestDetails').innerHTML = '<div class="empty-state"><p>Select a request to view details</p></div>';
+        });
+
+        document.getElementById('clearLogsBtn').addEventListener('click', () => {
+            logs = [];
+            document.getElementById('logsContainer').innerHTML = '<div class="empty-state"><p>No logs available</p></div>';
+        });
+
+        document.getElementById('filterUrl').addEventListener('input', renderRequests);
+        document.getElementById('filterMethod').addEventListener('change', renderRequests);
+        document.getElementById('logLevel').addEventListener('change', () => addLog('', ''));
+
+        // Navigation
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                const view = e.currentTarget.dataset.view;
+                
+                document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                
+                document.querySelectorAll('.view-container').forEach(v => v.classList.remove('active'));
+                document.getElementById(view + 'View').classList.add('active');
+            });
+        });
+
+        // Initialize
+        connectWebSocket();
+        
+        // Check status on load
+        fetch('/api/proxy/status')
+            .then(r => r.json())
+            .then(data => updateProxyStatus(data.running))
+            .catch(e => {
+                console.error('Error checking status:', e);
+                addLog('Error checking proxy status', 'ERROR');
+            });
+    </script>
+</body>
+</html>
