@@ -36,8 +36,11 @@ android {
 
     signingConfigs {
         debug {
-            // Debug builds use default Android debug keystore
-            // This ensures consistent debug signatures
+            // Use a fixed debug keystore to avoid package conflicts
+            storeFile file("../debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
         }
         release {
             // Release signing only works in CI/CD with GitHub Secrets
@@ -58,6 +61,7 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
         debug {
+            signingConfig signingConfigs.debug
             applicationIdSuffix ".debug"
             versionNameSuffix "-DEBUG"
             debuggable true

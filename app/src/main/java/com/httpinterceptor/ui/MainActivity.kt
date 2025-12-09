@@ -144,11 +144,45 @@ class MainActivity : AppCompatActivity() {
             toggleProxy()
         }
         
+        // Start service immediately to make Web UI available
         val intent = Intent(this, ProxyService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(intent)
+        } else {
+            startService(intent)
+        }
         bindService(intent, connection, Context.BIND_AUTO_CREATE)
         
-        // Check permissions on first launch
+        // Check permissions and battery optimization
+        checkBatteryOptimization()
         checkInitialPermissions()
+    }
+    
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val packageName = packageName
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                AlertDialog.Builder(this)
+                    .setTitle("Optimización de batería")
+                    .setMessage("Para que RoRo Interceptor funcione correctamente en segundo plano, es necesario desactivar la optimización de batería.\n\n¿Desea desactivarla ahora?")
+                    .setPositiveButton("Sí") { _, _ ->
+                        try {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            // Fallback to general battery settings
+                            val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                            startActivity(intent)
+                        }
+                    }
+                    .setNegativeButton("Ahora no", null)
+                    .show()
+            }
+        }
     }
     
     private fun checkInitialPermissions() {
