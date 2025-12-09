@@ -165,26 +165,43 @@ class SimpleProxyServer(
         
         private fun setupSSL(ctx: ChannelHandlerContext, host: String) {
             try {
+                Log.d(TAG, "🔐 Setting up SSL for: $host")
+                
+                // Generate certificate for this specific host
                 val (cert, key) = certManager.generateServerCertificate(host)
-                val sslContext = SslContextBuilder.forServer(key, cert).build()
+                
+                // Create SSL context with the generated certificate
+                val sslContext = SslContextBuilder.forServer(key, cert)
+                    .protocols("TLSv1.2", "TLSv1.3")
+                    .build()
+                
                 val sslHandler = sslContext.newHandler(ctx.alloc())
                 
+                // Add SSL handler FIRST in the pipeline
                 ctx.pipeline().addFirst("ssl", sslHandler)
                 
+                // Wait for SSL handshake to complete
                 sslHandler.handshakeFuture().addListener { future ->
                     if (future.isSuccess) {
-                        Log.d(TAG, "✅ SSL handshake OK: $host")
-                        ctx.pipeline().addLast(HttpServerCodec())
-                        ctx.pipeline().addLast(HttpObjectAggregator(10 * 1024 * 1024))
-                        ctx.pipeline().addLast(ProxyHandler())
+                        Log.d(TAG, "✅ SSL handshake successful for: $host")
+                        listener.onError("✅ SSL OK: $host")
+                        
+                        // After SSL handshake, add HTTP codecs
+                        ctx.pipeline().addLast("http-codec", HttpServerCodec())
+                        ctx.pipeline().addLast("http-aggregator", HttpObjectAggregator(10 * 1024 * 1024))
+                        ctx.pipeline().addLast("proxy-handler", ProxyHandler())
+                        
+                        // Start reading
                         ctx.read()
                     } else {
-                        Log.e(TAG, "❌ SSL handshake failed: $host")
+                        Log.e(TAG, "❌ SSL handshake failed for: $host", future.cause())
+                        listener.onError("❌ SSL handshake failed: $host - ${future.cause()?.message}")
                         ctx.close()
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "❌ SSL setup error: ${e.message}")
+                Log.e(TAG, "❌ SSL setup error for $host", e)
+                listener.onError("❌ SSL setup error: ${e.message}")
                 ctx.close()
             }
         }
@@ -299,14 +316,24 @@ class SimpleProxyServer(
                     }
                     
                     Log.d(TAG, "🔄 Forward: ${targetRequest.method()} $targetHost$path")
-                    targetChannel.writeAndFlush(targetRequest).addListener(ChannelFutureListener {
-                        targetChannel.read()
+                    Log.d(TAG, "   SSL: $isHttps")
+                    Log.d(TAG, "   Headers: ${targetRequest.headers().size()} headers")
+                    
+                    targetChannel.writeAndFlush(targetRequest).addListener(ChannelFutureListener { writeFuture ->
+                        if (writeFuture.isSuccess) {
+                            Log.d(TAG, "✅ Request sent to target")
+                            targetChannel.read()
+                        } else {
+                            Log.e(TAG, "❌ Failed to send request", writeFuture.cause())
+                            sendErrorResponse(clientCtx, HttpResponseStatus.BAD_GATEWAY, "Failed to forward request")
+                        }
                     })
                     clientRequest.release()
                     
                 } else {
-                    Log.e(TAG, "❌ Connect failed: $targetHost:$targetPort - ${future.cause().message}")
-                    sendErrorResponse(clientCtx, HttpResponseStatus.BAD_GATEWAY, "Cannot connect to target")
+                    Log.e(TAG, "❌ Connect failed: $targetHost:$targetPort - ${future.cause()?.message}")
+                    listener.onError("❌ Failed to connect to $targetHost:$targetPort")
+                    sendErrorResponse(clientCtx, HttpResponseStatus.BAD_GATEWAY, "Cannot connect to target: ${future.cause()?.message}")
                     clientRequest.release()
                 }
             })

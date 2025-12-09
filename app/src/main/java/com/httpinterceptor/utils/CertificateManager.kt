@@ -119,13 +119,7 @@ class CertificateManager(private val context: Context) {
     }
     
     fun generateServerCertificate(hostname: String, originalCert: X509Certificate? = null): Pair<X509Certificate, PrivateKey> {
-        val cachedAlias = "server_$hostname"
-        
-        if (keyStore.containsAlias(cachedAlias)) {
-            val cert = keyStore.getCertificate(cachedAlias) as X509Certificate
-            val key = keyStore.getKey(cachedAlias, KEYSTORE_PASSWORD.toCharArray()) as PrivateKey
-            return Pair(cert, key)
-        }
+        Log.d(TAG, "🔐 Generating certificate for: $hostname")
         
         val keyPairGenerator = KeyPairGenerator.getInstance("RSA", "BC")
         keyPairGenerator.initialize(2048, SecureRandom())
@@ -137,16 +131,8 @@ class CertificateManager(private val context: Context) {
         
         val issuer = X500Name(caCert.subjectX500Principal.name)
         
-        // Try to copy subject from original cert, otherwise use hostname
-        val subject = if (originalCert != null) {
-            try {
-                X500Name(originalCert.subjectX500Principal.name)
-            } catch (e: Exception) {
-                X500Name("CN=$hostname, O=RoRo Devs, OU=Development")
-            }
-        } else {
-            X500Name("CN=$hostname, O=RoRo Devs, OU=Development")
-        }
+        // Use hostname in CN (Critical for certificate validation)
+        val subject = X500Name("CN=$hostname")
         
         val certBuilder = JcaX509v3CertificateBuilder(
             issuer,
@@ -160,58 +146,31 @@ class CertificateManager(private val context: Context) {
         // Add SAN (Subject Alternative Name) - CRITICAL for modern browsers
         val sanList = mutableListOf<GeneralName>()
         
-        // Try to extract SAN from original certificate
-        var sanCopied = false
-        if (originalCert != null) {
-            try {
-                val sanExtensionValue = originalCert.getExtensionValue(Extension.subjectAlternativeName.id)
-                if (sanExtensionValue != null) {
-                    val asn1InputStream = org.bouncycastle.asn1.ASN1InputStream(sanExtensionValue)
-                    val derOctetString = asn1InputStream.readObject() as org.bouncycastle.asn1.DEROctetString
-                    val asn1InputStream2 = org.bouncycastle.asn1.ASN1InputStream(derOctetString.octets)
-                    val generalNames = GeneralNames.getInstance(asn1InputStream2.readObject())
-                    
-                    generalNames.names.forEach { generalName ->
-                        sanList.add(generalName)
-                    }
-                    sanCopied = true
-                    Log.d(TAG, "Copied SAN from original cert for $hostname")
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not copy SAN from original cert: ${e.message}")
+        // Always add the primary hostname
+        sanList.add(GeneralName(GeneralName.dNSName, hostname))
+        
+        // Add wildcard for subdomains
+        if (hostname.contains(".")) {
+            val parts = hostname.split(".")
+            if (parts.size >= 2) {
+                // For www.example.com -> add *.example.com
+                val wildcard = "*." + parts.takeLast(2).joinToString(".")
+                sanList.add(GeneralName(GeneralName.dNSName, wildcard))
             }
         }
         
-        // If SAN not copied from original, create basic SAN
-        if (!sanCopied) {
-            sanList.add(GeneralName(GeneralName.dNSName, hostname))
-            
-            // Add wildcard if hostname has subdomain
-            if (hostname.contains(".")) {
-                val parts = hostname.split(".")
-                if (parts.size > 2) {
-                    // For sub.example.com, add *.example.com
-                    val wildcard = "*." + parts.drop(1).joinToString(".")
-                    sanList.add(GeneralName(GeneralName.dNSName, wildcard))
-                } else {
-                    // For example.com, add *.example.com
-                    sanList.add(GeneralName(GeneralName.dNSName, "*.$hostname"))
-                }
-            }
-            
-            // Add IP address if hostname is an IP
-            if (hostname.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
-                sanList.add(GeneralName(GeneralName.iPAddress, hostname))
-            }
+        // Add IP address if hostname is an IP
+        if (hostname.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
+            sanList.add(GeneralName(GeneralName.iPAddress, hostname))
         }
         
         val san = GeneralNames(sanList.toTypedArray())
-        certBuilder.addExtension(Extension.subjectAlternativeName, true, san) // Changed to critical
+        certBuilder.addExtension(Extension.subjectAlternativeName, false, san)
         
         // Add Extended Key Usage for TLS server authentication
         certBuilder.addExtension(
             Extension.extendedKeyUsage,
-            true, // Changed to critical
+            false,
             org.bouncycastle.asn1.x509.ExtendedKeyUsage(
                 org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_serverAuth
             )
@@ -254,15 +213,10 @@ class CertificateManager(private val context: Context) {
             .setProvider("BC")
             .getCertificate(certHolder)
         
-        // Cache the certificate
-        keyStore.setKeyEntry(
-            cachedAlias,
-            keyPair.private,
-            KEYSTORE_PASSWORD.toCharArray(),
-            arrayOf(cert, caCert)
-        )
-        
-        Log.d(TAG, "Generated certificate for $hostname with SAN: ${sanList.map { 
+        Log.d(TAG, "✅ Generated certificate for $hostname")
+        Log.d(TAG, "   Subject: ${cert.subjectDN}")
+        Log.d(TAG, "   Issuer: ${cert.issuerDN}")
+        Log.d(TAG, "   SAN: ${sanList.joinToString { 
             when(it.tagNo) {
                 GeneralName.dNSName -> "DNS:${it.name}"
                 GeneralName.iPAddress -> "IP:${it.name}"
