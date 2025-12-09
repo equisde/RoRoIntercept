@@ -330,10 +330,10 @@ class MainActivity : AppCompatActivity() {
     
     private fun actuallyStartProxy() {
         // Check battery optimization first
-        checkBatteryOptimization()
+        checkBatteryOptimizationBeforeProxy()
     }
     
-    private fun checkBatteryOptimization() {
+    private fun checkBatteryOptimizationBeforeProxy() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val packageName = packageName
             val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager

@@ -104,3 +104,8 @@ keystore.b64
 keystore.b64
 *.keystore.backup
 roro-keystore-backup.keystore
+
+# Keystore files - Managed via GitHub Secrets
+*.keystore
+*.jks
+keystore.properties
