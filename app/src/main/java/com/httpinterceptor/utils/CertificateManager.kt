@@ -170,15 +170,33 @@ class CertificateManager(private val context: Context) {
         }
         
         val san = GeneralNames(sanList.toTypedArray())
-        certBuilder.addExtension(Extension.subjectAlternativeName, false, san)
+        certBuilder.addExtension(Extension.subjectAlternativeName, true, san) // Changed to critical
         
         // Add Extended Key Usage for TLS server authentication
         certBuilder.addExtension(
             Extension.extendedKeyUsage,
-            false,
+            true, // Changed to critical
             org.bouncycastle.asn1.x509.ExtendedKeyUsage(
                 org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_serverAuth
             )
+        )
+        
+        // Add Authority Key Identifier
+        val authorityKeyIdentifier = org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils()
+            .createAuthorityKeyIdentifier(caCert.publicKey)
+        certBuilder.addExtension(
+            Extension.authorityKeyIdentifier,
+            false,
+            authorityKeyIdentifier
+        )
+        
+        // Add Subject Key Identifier
+        val subjectKeyIdentifier = org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils()
+            .createSubjectKeyIdentifier(keyPair.public)
+        certBuilder.addExtension(
+            Extension.subjectKeyIdentifier,
+            false,
+            subjectKeyIdentifier
         )
         
         // Add Key Usage
