@@ -113,7 +113,7 @@ class WebServerService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("RoRo Interceptor - Web UI")
             .setContentText(message)
-            .setSmallIcon(R.drawable.ic_notification)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
@@ -577,8 +577,8 @@ class WebServer(port: Int, private val context: Context) : NanoHTTPD(port) {
                     const entry = document.createElement('div');
                     entry.className = 'log-entry ' + (log.type || '');
                     entry.innerHTML = `
-                        <div class="log-time">${log.timestamp}</div>
-                        <div>${log.message}</div>
+                        <div class="log-time">${'$'}{log.timestamp}</div>
+                        <div>${'$'}{log.message}</div>
                     `;
                     container.appendChild(entry);
                 });
