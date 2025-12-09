@@ -4,7 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.httpinterceptor.model.HttpRequest
 import fi.iki.elonen.NanoHTTPD
-import fi.iki.elonen.NanoWSD
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
@@ -12,91 +12,50 @@ class WebUIServer(
     private val context: Context,
     private val port: Int = 8888,
     private val onToggleProxy: (Boolean) -> Unit
-) : NanoWSD(port) {
+) : NanoHTTPD(port) {
 
     private val TAG = "WebUIServer"
-    private val connections = mutableSetOf<WebSocket>()
+    private val requests = mutableListOf<HttpRequest>()
+    private val logs = mutableListOf<Pair<String, String>>()
     
     @Volatile
     private var isProxyRunning = false
     
     fun setProxyStatus(running: Boolean) {
         isProxyRunning = running
-        broadcastProxyStatus()
     }
     
     fun broadcastRequest(request: HttpRequest) {
-        val json = JSONObject().apply {
-            put("type", "request")
-            put("data", JSONObject().apply {
-                put("id", request.id)
-                put("timestamp", request.timestamp)
-                put("method", request.method)
-                put("url", request.url)
-                put("host", request.host)
-                put("path", request.path)
-                put("headers", JSONObject(request.headers))
-                request.body?.let { put("body", it) }
-            })
-        }
-        broadcast(json.toString())
-    }
-    
-    fun broadcastResponse(request: HttpRequest) {
-        request.response?.let { response ->
-            val json = JSONObject().apply {
-                put("type", "response")
-                put("data", JSONObject().apply {
-                    put("requestId", request.id)
-                    put("statusCode", response.statusCode)
-                    put("statusMessage", response.statusMessage)
-                    put("headers", JSONObject(response.headers))
-                    response.body?.let { put("body", it) }
-                    put("timestamp", response.timestamp)
-                })
+        synchronized(requests) {
+            requests.add(request)
+            // Keep only last 100 requests
+            if (requests.size > 100) {
+                requests.removeAt(0)
             }
-            broadcast(json.toString())
         }
     }
     
     fun broadcastLog(message: String, level: String = "INFO") {
-        val json = JSONObject().apply {
-            put("type", "log")
-            put("message", message)
-            put("level", level)
-            put("timestamp", System.currentTimeMillis())
-        }
-        broadcast(json.toString())
-    }
-    
-    private fun broadcastProxyStatus() {
-        val json = JSONObject().apply {
-            put("type", "status")
-            put("running", isProxyRunning)
-        }
-        broadcast(json.toString())
-    }
-    
-    private fun broadcast(message: String) {
-        synchronized(connections) {
-            connections.forEach { ws ->
-                try {
-                    ws.send(message)
-                } catch (e: IOException) {
-                    Log.e(TAG, "Error broadcasting to WebSocket", e)
-                }
+        synchronized(logs) {
+            logs.add(Pair(message, level))
+            // Keep only last 100 logs
+            if (logs.size > 100) {
+                logs.removeAt(0)
             }
         }
     }
 
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
-        Log.d(TAG, "Request: $uri")
+        val method = session.method
+        Log.d(TAG, "Request: $method $uri")
 
         return when {
             uri == "/" || uri == "/index.html" -> serveFile("webui/index.html", "text/html")
-            uri.startsWith("/api/proxy/status") -> handleProxyStatus()
-            uri.startsWith("/api/proxy/toggle") -> handleProxyToggle()
+            uri == "/api/proxy/status" -> handleProxyStatus()
+            uri == "/api/proxy/toggle" && method == Method.POST -> handleProxyToggle()
+            uri == "/api/requests" -> handleGetRequests()
+            uri == "/api/logs" -> handleGetLogs()
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
         }
     }
@@ -129,55 +88,40 @@ class WebUIServer(
         val json = JSONObject().apply {
             put("running", isProxyRunning)
         }
-        broadcastProxyStatus()
         return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
     }
-
-    override fun openWebSocket(handshake: IHTTPSession): WebSocket {
-        return object : WebSocket(handshake) {
-            override fun onOpen() {
-                Log.d(TAG, "WebSocket opened")
-                synchronized(connections) {
-                    connections.add(this)
+    
+    private fun handleGetRequests(): Response {
+        val jsonArray = JSONArray()
+        synchronized(requests) {
+            requests.forEach { request ->
+                val json = JSONObject().apply {
+                    put("id", request.id)
+                    put("method", request.method)
+                    put("url", request.url)
+                    put("timestamp", request.timestamp)
+                    put("statusCode", request.statusCode)
+                    put("protocol", request.protocol)
                 }
-                // Send current proxy status
-                try {
-                    val json = JSONObject().apply {
-                        put("type", "status")
-                        put("running", isProxyRunning)
-                    }
-                    send(json.toString())
-                } catch (e: IOException) {
-                    Log.e(TAG, "Error sending initial status", e)
-                }
-            }
-
-            override fun onClose(
-                code: WebSocketFrame.CloseCode,
-                reason: String,
-                initiatedByRemote: Boolean
-            ) {
-                Log.d(TAG, "WebSocket closed: $reason")
-                synchronized(connections) {
-                    connections.remove(this)
-                }
-            }
-
-            override fun onMessage(message: WebSocketFrame) {
-                Log.d(TAG, "WebSocket message: ${message.textPayload}")
-            }
-
-            override fun onPong(pong: WebSocketFrame) {
-                Log.d(TAG, "WebSocket pong")
-            }
-
-            override fun onException(exception: IOException) {
-                Log.e(TAG, "WebSocket exception", exception)
-                synchronized(connections) {
-                    connections.remove(this)
-                }
+                jsonArray.put(json)
             }
         }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
+    }
+    
+    private fun handleGetLogs(): Response {
+        val jsonArray = JSONArray()
+        synchronized(logs) {
+            logs.forEach { (message, level) ->
+                val json = JSONObject().apply {
+                    put("message", message)
+                    put("level", level)
+                    put("timestamp", System.currentTimeMillis())
+                }
+                jsonArray.put(json)
+            }
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
     }
 
     fun startServer() {

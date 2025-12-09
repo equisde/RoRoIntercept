@@ -357,9 +357,9 @@ class MitmProxyServer(
         
         private fun createSslContext(hostname: String): SslContext {
             // Generate certificate for this specific hostname
-            val certPair = certificateManager.generateServerCertificate(hostname)
+            val (cert, privateKey) = certificateManager.generateServerCertificate(hostname)
             
-            return SslContextBuilder.forServer(certPair.first, certPair.second)
+            return SslContextBuilder.forServer(privateKey, cert)
                 .build()
         }
         
