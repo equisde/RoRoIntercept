@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RoRo Interceptor - Professional Control Panel</title>
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5568d3;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --info: #3b82f6;
+            --dark: #1f2937;
+            --light-bg: #f9fafb;
+            --border: #e5e7eb;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Header */
+        header {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+        
+        .header-left h1 {
+            color: var(--primary);
+            font-size: 32px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .logo {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 24px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .status-running {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        
+        .status-stopped {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-running .status-dot {
+            background: var(--success);
+        }
+        
+        .status-stopped .status-dot {
+            background: var(--danger);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+        
+        .btn-success:hover:not(:disabled) {
+            background: #059669;
+            transform: translateY(-2px);
+        }
+        
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+        
+        .btn-danger:hover:not(:disabled) {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            transition: transform 0.2s;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+        }
+        
+        .stat-value {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+        
+        .stat-label {
+            color: #6b7280;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        /* Tabs */
+        .tabs {
+            background: white;
+            border-radius: 12px 12px 0 0;
+            display: flex;
+            gap: 4px;
+            padding: 8px;
+            margin-bottom: 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            border: none;
+            background: transparent;
+            color: #6b7280;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+        
+        .tab:hover {
+            background: var(--light-bg);
+        }
+        
+        .tab.active {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .tab-content {
+            background: white;
+            border-radius: 0 0 12px 12px;
+            padding: 24px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        /* Request List */
+        .request-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .request-item {
+            padding: 16px;
+            margin-bottom: 12px;
+            background: var(--light-bg);
+            border-radius: 10px;
+            border-left: 4px solid var(--primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .request-item:hover {
+            background: #f3f4f6;
+            transform: translateX(4px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .method {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 11px;
+            color: white;
+            margin-right: 8px;
+            text-transform: uppercase;
+        }
+        
+        .method.GET { background: var(--success); }
+        .method.POST { background: var(--info); }
+        .method.PUT { background: var(--warning); }
+        .method.DELETE { background: var(--danger); }
+        .method.PATCH { background: #8b5cf6; }
+        
+        .status-code {
+            display: inline-block;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        
+        .status-2xx { background: #d1fae5; color: #065f46; }
+        .status-3xx { background: #fef3c7; color: #92400e; }
+        .status-4xx { background: #fee2e2; color: #991b1b; }
+        .status-5xx { background: #ede9fe; color: #5b21b6; }
+        
+        .url {
+            display: block;
+            color: #374151;
+            font-size: 14px;
+            margin: 8px 0;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .badge-warning { background: #fef3c7; color: #92400e; }
+        .badge-info { background: #dbeafe; color: #1e40af; }
+        .badge-success { background: #d1fae5; color: #065f46; }
+        
+        /* Logs */
+        .log-container {
+            background: #1f2937;
+            color: #10b981;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 500px;
+            overflow-y: auto;
+            line-height: 1.6;
+        }
+        
+        .log-line {
+            margin-bottom: 4px;
+        }
+        
+        .log-line .timestamp {
+            color: #6b7280;
+        }
+        
+        .log-line.error {
+            color: #ef4444;
+        }
+        
+        .log-line.warning {
+            color: #f59e0b;
+        }
+        
+        /* Rule List */
+        .rule-item {
+            padding: 16px;
+            margin-bottom: 12px;
+            background: var(--light-bg);
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.2s;
+        }
+        
+        .rule-enabled {
+            border-left: 4px solid var(--success);
+        }
+        
+        .rule-disabled {
+            border-left: 4px solid #9ca3af;
+            opacity: 0.6;
+        }
+        
+        .rule-item:hover {
+            background: #f3f4f6;
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            backdrop-filter: blur(4px);
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            padding: 32px;
+            border-radius: 16px;
+            max-width: 700px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            animation: modalSlide 0.3s ease-out;
+        }
+        
+        @keyframes modalSlide {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .modal-header {
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--border);
+        }
+        
+        .modal-header h2 {
+            color: var(--primary);
+            font-size: 24px;
+        }
+        
+        /* Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #374151;
+            font-size: 14px;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border 0.2s;
+        }
+        
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        
+        textarea {
+            min-height: 120px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+        }
+        
+        pre {
+            background: #1f2937;
+            color: #10b981;
+            padding: 16px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .header-left h1 {
+                font-size: 24px;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .tabs {
+                flex-direction: column;
+            }
+        }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-dark);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #9ca3af;
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <div class="header-left">
+                <h1>
+                    <div class="logo">🔍</div>
+                    RoRo Interceptor
+                </h1>
+                <div id="proxyStatus" class="status-badge status-stopped">
+                    <span class="status-dot"></span>
+                    <span>Proxy Detenido</span>
+                </div>
+                <p style="margin-top: 12px; color: #6b7280; font-size: 14px;">
+                    Control Panel Profesional - Puerto 2580
+                </p>
+            </div>
+            <div class="header-actions">
+                <button id="btnStartProxy" class="btn btn-success" onclick="toggleProxy()">
+                    ▶ Iniciar Proxy
+                </button>
+                <button class="btn btn-primary" onclick="showRuleModal()">
+                    ⚙️ Nueva Regla
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="clearAll()">
+                    🗑️ Limpiar Todo
+                </button>
+            </div>
+        </header>
+        
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="statRequests">0</div>
+                <div class="stat-label">📡 Requests Capturados</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statRules">0</div>
+                <div class="stat-label">⚙️ Reglas Activas</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statModified">0</div>
+                <div class="stat-label">✏️ Modificados</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statBlocked">0</div>
+                <div class="stat-label">🚫 Bloqueados</div>
+            </div>
+        </div>
+        
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('requests')">📡 Requests</button>
+            <button class="tab" onclick="switchTab('rules')">⚙️ Reglas</button>
+            <button class="tab" onclick="switchTab('logs')">📋 Logs</button>
+            <button class="tab" onclick="switchTab('details')">📝 Detalles</button>
+        </div>
+        
+        <!-- Tab Content -->
+        <div id="requestsTab" class="tab-content active">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: var(--primary);">Requests en Tiempo Real</h2>
+                <button class="btn btn-sm btn-danger" onclick="clearRequests()">Limpiar</button>
+            </div>
+            <div class="request-list" id="requestList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📭</div>
+                    <p>Esperando requests...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="rulesTab" class="tab-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: var(--primary);">Reglas de Modificación</h2>
+                <button class="btn btn-sm btn-primary" onclick="showRuleModal()">+ Nueva</button>
+            </div>
+            <div class="rule-list" id="ruleList">
+                <div class="empty-state">
+                    <div class="empty-state-icon">⚙️</div>
+                    <p>No hay reglas configuradas</p>
+                </div>
+            </div>
+        </div>
+        
+        <div id="logsTab" class="tab-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: var(--primary);">Logs del Sistema</h2>
+                <button class="btn btn-sm btn-danger" onclick="clearLogs()">Limpiar</button>
+            </div>
+            <div class="log-container" id="logContainer">
+                <div class="log-line">
+                    <span class="timestamp">[00:00:00.000]</span> Sistema iniciado
+                </div>
+            </div>
+        </div>
+        
+        <div id="detailsTab" class="tab-content">
+            <h2 style="color: var(--primary); margin-bottom: 20px;">Detalles del Request</h2>
+            <div id="requestDetail">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📄</div>
+                    <p>Selecciona un request para ver los detalles</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal Nueva Regla -->
+    <div class="modal" id="ruleModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Nueva Regla de Modificación</h2>
+            </div>
+            <form id="ruleForm" onsubmit="submitRule(event)">
+                <div class="form-group">
+                    <label>📌 Nombre de la Regla</label>
+                    <input type="text" id="ruleName" placeholder="Ej: Modificar API Token" required>
+                </div>
+                <div class="form-group">
+                    <label>🔗 Patrón URL</label>
+                    <input type="text" id="rulePattern" placeholder="Ej: api.example.com" required>
+                </div>
+                <div class="form-group">
+                    <label>🎯 Tipo de Match</label>
+                    <select id="ruleMatchType">
+                        <option value="CONTAINS">Contiene</option>
+                        <option value="EXACT">Exacto</option>
+                        <option value="STARTS_WITH">Empieza con</option>
+                        <option value="ENDS_WITH">Termina con</option>
+                        <option value="REGEX">RegEx</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>⚡ Acción</label>
+                    <select id="ruleAction" onchange="toggleModifySection()">
+                        <option value="MODIFY">Modificar</option>
+                        <option value="BLOCK">Bloquear</option>
+                        <option value="ALLOW">Permitir</option>
+                    </select>
+                </div>
+                <div id="modifySection">
+                    <div class="form-group">
+                        <label>📝 Headers a Modificar (JSON)</label>
+                        <textarea id="ruleHeaders" placeholder='{"Authorization": "Bearer NEW_TOKEN"}'></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>🔄 Headers a Remover (separados por coma)</label>
+                        <input type="text" id="removeHeaders" placeholder="Cookie, User-Agent">
+                    </div>
+                    <div class="form-group">
+                        <label>🔍 Buscar/Reemplazar en Headers (JSON Array)</label>
+                        <textarea id="searchReplaceHeaders" placeholder='[{"search": "old", "replace": "new", "useRegex": false}]'></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>📄 Body de Reemplazo</label>
+                        <textarea id="ruleBody" placeholder='{"modified": true}'></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>🔍 Buscar/Reemplazar en Body (JSON Array)</label>
+                        <textarea id="searchReplaceBody" placeholder='[{"search": "old", "replace": "new", "useRegex": false}]'></textarea>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 12px; margin-top: 24px;">
+                    <button type="submit" class="btn btn-success" style="flex: 1;">✓ Crear Regla</button>
+                    <button type="button" class="btn btn-danger" onclick="closeRuleModal()" style="flex: 1;">✕ Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        let requests = [];
+        let rules = [];
+        let logs = [];
+        let currentTab = 'requests';
+        let proxyRunning = false;
+        
+        // Toggle Proxy
+        async function toggleProxy() {
+            const btn = document.getElementById('btnStartProxy');
+            btn.disabled = true;
+            
+            try {
+                const endpoint = proxyRunning ? '/api/proxy/stop' : '/api/proxy/start';
+                const response = await fetch(endpoint, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    proxyRunning = !proxyRunning;
+                    updateProxyStatus();
+                }
+            } catch (e) {
+                console.error('Error toggling proxy:', e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        function updateProxyStatus() {
+            const statusEl = document.getElementById('proxyStatus');
+            const btn = document.getElementById('btnStartProxy');
+            
+            if (proxyRunning) {
+                statusEl.className = 'status-badge status-running';
+                statusEl.innerHTML = '<span class="status-dot"></span><span>Proxy Activo</span>';
+                btn.innerHTML = '⏸ Detener Proxy';
+                btn.className = 'btn btn-danger';
+            } else {
+                statusEl.className = 'status-badge status-stopped';
+                statusEl.innerHTML = '<span class="status-dot"></span><span>Proxy Detenido</span>';
+                btn.innerHTML = '▶ Iniciar Proxy';
+                btn.className = 'btn btn-success';
+            }
+        }
+        
+        // Switch Tab
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+        
+        // Load Data
+        async function loadRequests() {
+            try {
+                const response = await fetch('/api/requests');
+                requests = await response.json();
+                renderRequests();
+                updateStats();
+            } catch (e) {
+                console.error('Error loading requests:', e);
+            }
+        }
+        
+        async function loadRules() {
+            try {
+                const response = await fetch('/api/rules');
+                rules = await response.json();
+                renderRules();
+                updateStats();
+            } catch (e) {
+                console.error('Error loading rules:', e);
+            }
+        }
+        
+        async function loadLogs() {
+            try {
+                const response = await fetch('/api/logs');
+                logs = await response.json();
+                renderLogs();
+            } catch (e) {
+                console.error('Error loading logs:', e);
+            }
+        }
+        
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/proxy/status');
+                const data = await response.json();
+                proxyRunning = data.running;
+                updateProxyStatus();
+            } catch (e) {
+                console.error('Error loading status:', e);
+            }
+        }
+        
+        // Render Functions
+        function renderRequests() {
+            const list = document.getElementById('requestList');
+            if (requests.length === 0) {
+                list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📭</div><p>No hay requests capturados</p></div>';
+                return;
+            }
+            
+            list.innerHTML = requests.slice(0, 100).map(req => {
+                const statusClass = req.response ? `status-${Math.floor(req.response.statusCode / 100)}xx` : '';
+                const statusCode = req.response ? req.response.statusCode : '...';
+                return `
+                    <div class="request-item" onclick="showRequestDetail(${req.id})">
+                        <div>
+                            <span class="method ${req.method}">${req.method}</span>
+                            <span class="status-code ${statusClass}">${statusCode}</span>
+                            ${req.modified ? '<span class="badge badge-warning">MODIFICADO</span>' : ''}
+                            ${req.blocked ? '<span class="badge badge-info">BLOQUEADO</span>' : ''}
+                        </div>
+                        <span class="url">${req.url}</span>
+                        <small style="color: #9ca3af;">${new Date(req.timestamp).toLocaleTimeString()}</small>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function renderRules() {
+            const list = document.getElementById('ruleList');
+            if (rules.length === 0) {
+                list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚙️</div><p>No hay reglas configuradas</p></div>';
+                return;
+            }
+            
+            list.innerHTML = rules.map(rule => `
+                <div class="rule-item ${rule.enabled ? 'rule-enabled' : 'rule-disabled'}">
+                    <div>
+                        <strong style="font-size: 16px;">${rule.name}</strong>
+                        <br>
+                        <small style="color: #6b7280;">${rule.urlPattern}</small>
+                        <br>
+                        <span class="badge badge-info">${rule.matchType}</span>
+                        <span class="badge ${rule.action === 'BLOCK' ? 'badge-warning' : 'badge-success'}">${rule.action}</span>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="btn btn-sm ${rule.enabled ? 'btn-danger' : 'btn-success'}" onclick="toggleRule(${rule.id})">
+                            ${rule.enabled ? '⏸' : '▶'}
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteRule(${rule.id})">🗑️</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderLogs() {
+            const container = document.getElementById('logContainer');
+            if (logs.length === 0) {
+                container.innerHTML = '<div class="log-line"><span class="timestamp">[00:00:00.000]</span> No hay logs disponibles</div>';
+                return;
+            }
+            
+            container.innerHTML = logs.slice(-200).reverse().map(log => {
+                let className = 'log-line';
+                if (log.toLowerCase().includes('error')) className += ' error';
+                if (log.toLowerCase().includes('warning')) className += ' warning';
+                return `<div class="${className}">${log}</div>`;
+            }).join('');
+            
+            container.scrollTop = 0;
+        }
+        
+        function updateStats() {
+            document.getElementById('statRequests').textContent = requests.length;
+            document.getElementById('statRules').textContent = rules.filter(r => r.enabled).length;
+            document.getElementById('statModified').textContent = requests.filter(r => r.modified).length;
+            document.getElementById('statBlocked').textContent = requests.filter(r => r.blocked).length;
+        }
+        
+        function showRequestDetail(id) {
+            const req = requests.find(r => r.id === id);
+            if (!req) return;
+            
+            switchTab('details');
+            const tab = document.querySelector('.tab:nth-child(4)');
+            tab.click();
+            
+            const detail = document.getElementById('requestDetail');
+            detail.innerHTML = `
+                <h3 style="color: var(--primary); margin-bottom: 16px;">${req.method} ${req.url}</h3>
+                <p><strong>Host:</strong> ${req.host}</p>
+                <p><strong>Timestamp:</strong> ${new Date(req.timestamp).toLocaleString()}</p>
+                
+                <h4 style="margin-top: 24px; color: var(--dark);">Request Headers</h4>
+                <pre>${JSON.stringify(req.headers, null, 2)}</pre>
+                
+                ${req.body ? `
+                    <h4 style="margin-top: 24px; color: var(--dark);">Request Body</h4>
+                    <pre>${req.body}</pre>
+                ` : ''}
+                
+                ${req.response ? `
+                    <h4 style="margin-top: 24px; color: var(--dark);">Response Status</h4>
+                    <p><strong class="status-code status-${Math.floor(req.response.statusCode / 100)}xx">${req.response.statusCode} ${req.response.statusMessage}</strong></p>
+                    
+                    <h4 style="margin-top: 24px; color: var(--dark);">Response Headers</h4>
+                    <pre>${JSON.stringify(req.response.headers, null, 2)}</pre>
+                    
+                    ${req.response.body ? `
+                        <h4 style="margin-top: 24px; color: var(--dark);">Response Body</h4>
+                        <pre>${req.response.body.substring(0, 2000)}${req.response.body.length > 2000 ? '\n... (truncated)' : ''}</pre>
+                    ` : ''}
+                ` : '<p style="color: var(--warning); margin-top: 16px;">⏳ Esperando respuesta...</p>'}
+            `;
+        }
+        
+        // Rule Modal
+        function showRuleModal() {
+            document.getElementById('ruleModal').classList.add('active');
+        }
+        
+        function closeRuleModal() {
+            document.getElementById('ruleModal').classList.remove('active');
+            document.getElementById('ruleForm').reset();
+        }
+        
+        function toggleModifySection() {
+            const action = document.getElementById('ruleAction').value;
+            const section = document.getElementById('modifySection');
+            section.style.display = action === 'MODIFY' ? 'block' : 'none';
+        }
+        
+        async function submitRule(e) {
+            e.preventDefault();
+            
+            const modifyRequest = {};
+            const headers = document.getElementById('ruleHeaders').value;
+            const removeHeaders = document.getElementById('removeHeaders').value;
+            const searchReplaceHeaders = document.getElementById('searchReplaceHeaders').value;
+            const body = document.getElementById('ruleBody').value;
+            const searchReplaceBody = document.getElementById('searchReplaceBody').value;
+            
+            if (headers) {
+                try {
+                    modifyRequest.modifyHeaders = JSON.parse(headers);
+                } catch (e) {
+                    alert('Error en JSON de headers: ' + e.message);
+                    return;
+                }
+            }
+            
+            if (removeHeaders) {
+                modifyRequest.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h);
+            }
+            
+            if (searchReplaceHeaders) {
+                try {
+                    modifyRequest.searchReplaceHeaders = JSON.parse(searchReplaceHeaders);
+                } catch (e) {
+                    alert('Error en JSON de buscar/reemplazar headers: ' + e.message);
+                    return;
+                }
+            }
+            
+            if (body) {
+                modifyRequest.replaceBody = body;
+            }
+            
+            if (searchReplaceBody) {
+                try {
+                    modifyRequest.searchReplaceBody = JSON.parse(searchReplaceBody);
+                } catch (e) {
+                    alert('Error en JSON de buscar/reemplazar body: ' + e.message);
+                    return;
+                }
+            }
+            
+            const rule = {
+                id: Date.now(),
+                enabled: true,
+                name: document.getElementById('ruleName').value,
+                urlPattern: document.getElementById('rulePattern').value,
+                matchType: document.getElementById('ruleMatchType').value,
+                action: document.getElementById('ruleAction').value,
+                modifyRequest: Object.keys(modifyRequest).length > 0 ? modifyRequest : null
+            };
+            
+            try {
+                await fetch('/api/rules', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(rule)
+                });
+                closeRuleModal();
+                loadRules();
+            } catch (e) {
+                alert('Error creando regla: ' + e.message);
+            }
+        }
+        
+        async function deleteRule(id) {
+            if (confirm('¿Eliminar esta regla?')) {
+                await fetch(`/api/rules/${id}`, {method: 'DELETE'});
+                loadRules();
+            }
+        }
+        
+        async function toggleRule(id) {
+            const rule = rules.find(r => r.id === id);
+            if (!rule) return;
+            
+            rule.enabled = !rule.enabled;
+            await fetch(`/api/rules/${id}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(rule)
+            });
+            loadRules();
+        }
+        
+        async function clearRequests() {
+            if (confirm('¿Limpiar todos los requests?')) {
+                await fetch('/api/clear', {method: 'POST'});
+                requests = [];
+                renderRequests();
+                updateStats();
+            }
+        }
+        
+        async function clearAll() {
+            if (confirm('¿Limpiar requests Y reglas?')) {
+                await fetch('/api/clear', {method: 'POST'});
+                requests = [];
+                renderRequests();
+                updateStats();
+            }
+        }
+        
+        function clearLogs() {
+            logs = [];
+            renderLogs();
+        }
+        
+        // Auto-refresh
+        setInterval(() => {
+            loadRequests();
+            loadRules();
+            loadLogs();
+        }, 2000);
+        
+        // Initial load
+        loadStatus();
+        loadRequests();
+        loadRules();
+        loadLogs();
+    </script>
+</body>
+</html>

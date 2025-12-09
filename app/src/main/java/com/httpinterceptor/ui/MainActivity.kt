@@ -295,6 +295,54 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun actuallyStartProxy() {
+        // Check battery optimization first
+        checkBatteryOptimization()
+    }
+    
+    private fun checkBatteryOptimization() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val packageName = packageName
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                AlertDialog.Builder(this)
+                    .setTitle("Optimización de batería")
+                    .setMessage("Para mantener RoRo Interceptor activo en segundo plano, necesitamos excluirlo de la optimización de batería.\n\nEsto permitirá que el proxy funcione continuamente sin ser detenido por el sistema.")
+                    .setPositiveButton("Configurar") { _, _ ->
+                        try {
+                            val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                            intent.data = Uri.parse("package:$packageName")
+                            startActivity(intent)
+                            // Wait a bit then start proxy
+                            btnStartStop.postDelayed({
+                                startProxyNow()
+                            }, 1000)
+                        } catch (e: Exception) {
+                            // If that fails, open battery settings
+                            try {
+                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                startActivity(intent)
+                                btnStartStop.postDelayed({
+                                    startProxyNow()
+                                }, 1000)
+                            } catch (e2: Exception) {
+                                startProxyNow()
+                            }
+                        }
+                    }
+                    .setNegativeButton("Omitir") { _, _ ->
+                        startProxyNow()
+                    }
+                    .show()
+            } else {
+                startProxyNow()
+            }
+        } else {
+            startProxyNow()
+        }
+    }
+    
+    private fun startProxyNow() {
         proxyService?.let { service ->
             service.startProxy(2580)
             updateProxyInfo()

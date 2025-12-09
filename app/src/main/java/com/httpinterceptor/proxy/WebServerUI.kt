@@ -12,6 +12,7 @@ class WebServerUI(
 ) : NanoHTTPD(port) {
     
     private val gson = Gson()
+    private val logs = CopyOnWriteArrayList<String>()
     
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
@@ -27,13 +28,63 @@ class WebServerUI(
             uri.startsWith("/api/rules/") && method == Method.DELETE -> deleteRule(uri)
             uri.startsWith("/api/rules/") && method == Method.PUT -> updateRule(uri, session)
             uri == "/api/proxy/status" -> serveProxyStatus()
+            uri == "/api/proxy/start" && method == Method.POST -> startProxy()
+            uri == "/api/proxy/stop" && method == Method.POST -> stopProxy()
+            uri == "/api/logs" -> serveLogs()
             uri == "/api/clear" && method == Method.POST -> clearRequests()
             uri.startsWith("/static/") -> serveStaticFile(uri)
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
         }
     }
     
+    fun addLog(message: String) {
+        val timestamp = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.getDefault()).format(java.util.Date())
+        logs.add("[$timestamp] $message")
+        if (logs.size > 500) logs.removeAt(0)
+    }
+    
+    private fun startProxy(): Response {
+        return try {
+            proxyService.startProxy()
+            addLog("Proxy iniciado desde Web UI")
+            newFixedLengthResponse(Response.Status.OK, "application/json", """{"success": true}""")
+        } catch (e: Exception) {
+            addLog("ERROR: No se pudo iniciar el proxy - ${e.message}")
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", """{"success": false, "error": "${e.message}"}""")
+        }
+    }
+    
+    private fun stopProxy(): Response {
+        return try {
+            proxyService.stopProxy()
+            addLog("Proxy detenido desde Web UI")
+            newFixedLengthResponse(Response.Status.OK, "application/json", """{"success": true}""")
+        } catch (e: Exception) {
+            addLog("ERROR: No se pudo detener el proxy - ${e.message}")
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", """{"success": false, "error": "${e.message}"}""")
+        }
+    }
+    
+    private fun serveLogs(): Response {
+        val json = gson.toJson(logs.toList())
+        return newFixedLengthResponse(Response.Status.OK, "application/json", json)
+    }
+    
     private fun serveIndexPage(): Response {
+        // Try to load from assets
+        return try {
+            val context = proxyService.applicationContext
+            val inputStream = context.assets.open("web_ui.html")
+            val html = inputStream.bufferedReader().use { it.readText() }
+            newFixedLengthResponse(Response.Status.OK, "text/html", html)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading web_ui.html from assets", e)
+            // Fallback to embedded HTML
+            serveFallbackHtml()
+        }
+    }
+    
+    private fun serveFallbackHtml(): Response {
         val html = """
 <!DOCTYPE html>
 <html lang="es">
