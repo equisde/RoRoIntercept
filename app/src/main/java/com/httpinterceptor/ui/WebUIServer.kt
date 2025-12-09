@@ -100,8 +100,8 @@ class WebUIServer(
                     put("method", request.method)
                     put("url", request.url)
                     put("timestamp", request.timestamp)
-                    put("statusCode", request.statusCode)
-                    put("protocol", request.protocol)
+                    put("statusCode", request.response?.statusCode ?: 0)
+                    put("protocol", if (request.url.startsWith("https://")) "HTTPS" else "HTTP")
                 }
                 jsonArray.put(json)
             }
