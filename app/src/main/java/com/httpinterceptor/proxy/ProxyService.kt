@@ -55,6 +55,12 @@ class ProxyService : Service() {
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Handle action-based commands
+        when (intent?.action) {
+            "START_PROXY" -> startProxy()
+            "STOP_PROXY" -> stopProxy()
+        }
+        
         // Always ensure we're running in foreground
         startForeground(NOTIFICATION_ID, createNotification(
             if (isProxyRunning()) "Proxy: http://0.0.0.0:2580 | Web UI: http://localhost:8080"
@@ -110,6 +116,11 @@ class ProxyService : Service() {
             
             proxyServer?.start()
             
+            // Update shared preferences
+            getSharedPreferences("proxy_prefs", MODE_PRIVATE).edit()
+                .putBoolean("proxy_running", true)
+                .apply()
+            
             // Ensure Web UI is still running
             startWebUI()
             
@@ -128,6 +139,12 @@ class ProxyService : Service() {
     fun stopProxy() {
         proxyServer?.stop()
         proxyServer = null
+        
+        // Update shared preferences
+        getSharedPreferences("proxy_prefs", MODE_PRIVATE).edit()
+            .putBoolean("proxy_running", false)
+            .apply()
+        
         // Don't stop Web UI, keep it running
         // Update notification to show proxy stopped
         val notification = createNotification("Proxy detenido | Web UI: http://localhost:8080")

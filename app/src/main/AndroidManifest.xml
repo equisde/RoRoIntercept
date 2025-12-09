@@ -72,6 +72,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         
+        <service
+            android:name=".web.WebServerService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        
         <!-- FileProvider for sharing certificate files -->
         <provider
             android:name="androidx.core.content.FileProvider"

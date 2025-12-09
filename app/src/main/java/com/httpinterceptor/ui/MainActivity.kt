@@ -144,6 +144,9 @@ class MainActivity : AppCompatActivity() {
             toggleProxy()
         }
         
+        // Start Web Server Service immediately to make Web UI available
+        com.httpinterceptor.web.WebServerService.start(this)
+        
         // Start service immediately to make Web UI available
         val intent = Intent(this, ProxyService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
