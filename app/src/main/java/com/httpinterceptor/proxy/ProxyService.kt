@@ -54,6 +54,20 @@ class ProxyService : Service() {
         Log.d(TAG, "ProxyService created")
     }
     
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Always ensure we're running in foreground
+        startForeground(NOTIFICATION_ID, createNotification(
+            if (isProxyRunning()) "Proxy: http://0.0.0.0:2580 | Web UI: http://localhost:8080"
+            else "Web UI: http://localhost:8080 | Proxy detenido"
+        ))
+        
+        // Ensure Web UI is running
+        startWebUI()
+        
+        // Return START_STICKY to restart service if killed by system
+        return START_STICKY
+    }
+    
     private fun startWebUI() {
         if (webServer == null) {
             try {
