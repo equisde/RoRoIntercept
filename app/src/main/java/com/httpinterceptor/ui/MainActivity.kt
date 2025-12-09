@@ -451,11 +451,31 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun exportCertificate() {
+        // Check certificate status first
+        var message = ""
+        proxyService?.let { service ->
+            val isInstalled = service.isCertificateInstalled()
+            val shouldReinstall = service.shouldReinstallCertificate()
+            
+            message = if (isInstalled) {
+                "✓ Certificado CA ya está instalado en el sistema.\n\n"
+            } else {
+                "⚠ Certificado CA NO está instalado en el sistema.\n\n"
+            }
+            
+            if (shouldReinstall && isInstalled) {
+                message += "⚠ El certificado está por expirar. Se recomienda reinstalar.\n\n"
+            }
+            
+            message += "Selecciona el formato para exportar:"
+        }
+        
         // Show format selection dialog
         val formats = arrayOf("PEM (.pem)", "DER (.der)", "CRT (.crt)", "CER (.cer)", "Todos los formatos")
         
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Selecciona formato de exportación")
+            .setTitle("Exportar Certificado CA")
+            .setMessage(message)
             .setItems(formats) { _, which ->
                 when (which) {
                     0 -> exportCertificateFormat("PEM")

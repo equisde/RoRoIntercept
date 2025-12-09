@@ -118,7 +118,7 @@ class CertificateManager(private val context: Context) {
         return Pair(cert, keyPair.private)
     }
     
-    fun generateServerCertificate(hostname: String): Pair<X509Certificate, PrivateKey> {
+    fun generateServerCertificate(hostname: String, originalCert: X509Certificate? = null): Pair<X509Certificate, PrivateKey> {
         val cachedAlias = "server_$hostname"
         
         if (keyStore.containsAlias(cachedAlias)) {
@@ -136,7 +136,17 @@ class CertificateManager(private val context: Context) {
         val notAfter = Date(now.time + 365L * 24 * 60 * 60 * 1000) // 1 year
         
         val issuer = X500Name(caCert.subjectX500Principal.name)
-        val subject = X500Name("CN=$hostname, O=RoRo Devs, OU=Development")
+        
+        // Try to copy subject from original cert, otherwise use hostname
+        val subject = if (originalCert != null) {
+            try {
+                X500Name(originalCert.subjectX500Principal.name)
+            } catch (e: Exception) {
+                X500Name("CN=$hostname, O=RoRo Devs, OU=Development")
+            }
+        } else {
+            X500Name("CN=$hostname, O=RoRo Devs, OU=Development")
+        }
         
         val certBuilder = JcaX509v3CertificateBuilder(
             issuer,
@@ -149,24 +159,50 @@ class CertificateManager(private val context: Context) {
         
         // Add SAN (Subject Alternative Name) - CRITICAL for modern browsers
         val sanList = mutableListOf<GeneralName>()
-        sanList.add(GeneralName(GeneralName.dNSName, hostname))
         
-        // Add wildcard if hostname has subdomain
-        if (hostname.contains(".")) {
-            val parts = hostname.split(".")
-            if (parts.size > 2) {
-                // For sub.example.com, add *.example.com
-                val wildcard = "*." + parts.drop(1).joinToString(".")
-                sanList.add(GeneralName(GeneralName.dNSName, wildcard))
-            } else {
-                // For example.com, add *.example.com
-                sanList.add(GeneralName(GeneralName.dNSName, "*.$hostname"))
+        // Try to extract SAN from original certificate
+        var sanCopied = false
+        if (originalCert != null) {
+            try {
+                val sanExtensionValue = originalCert.getExtensionValue(Extension.subjectAlternativeName.id)
+                if (sanExtensionValue != null) {
+                    val asn1InputStream = org.bouncycastle.asn1.ASN1InputStream(sanExtensionValue)
+                    val derOctetString = asn1InputStream.readObject() as org.bouncycastle.asn1.DEROctetString
+                    val asn1InputStream2 = org.bouncycastle.asn1.ASN1InputStream(derOctetString.octets)
+                    val generalNames = GeneralNames.getInstance(asn1InputStream2.readObject())
+                    
+                    generalNames.names.forEach { generalName ->
+                        sanList.add(generalName)
+                    }
+                    sanCopied = true
+                    Log.d(TAG, "Copied SAN from original cert for $hostname")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not copy SAN from original cert: ${e.message}")
             }
         }
         
-        // Add IP address if hostname is an IP
-        if (hostname.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
-            sanList.add(GeneralName(GeneralName.iPAddress, hostname))
+        // If SAN not copied from original, create basic SAN
+        if (!sanCopied) {
+            sanList.add(GeneralName(GeneralName.dNSName, hostname))
+            
+            // Add wildcard if hostname has subdomain
+            if (hostname.contains(".")) {
+                val parts = hostname.split(".")
+                if (parts.size > 2) {
+                    // For sub.example.com, add *.example.com
+                    val wildcard = "*." + parts.drop(1).joinToString(".")
+                    sanList.add(GeneralName(GeneralName.dNSName, wildcard))
+                } else {
+                    // For example.com, add *.example.com
+                    sanList.add(GeneralName(GeneralName.dNSName, "*.$hostname"))
+                }
+            }
+            
+            // Add IP address if hostname is an IP
+            if (hostname.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
+                sanList.add(GeneralName(GeneralName.iPAddress, hostname))
+            }
         }
         
         val san = GeneralNames(sanList.toTypedArray())
@@ -319,6 +355,53 @@ class CertificateManager(private val context: Context) {
     fun exportCACertificateCER(): ByteArray {
         // CER is just DER format with different extension
         return caCert.encoded
+    }
+    
+    fun isCertificateInstalled(): Boolean {
+        return try {
+            val trustManager = javax.net.ssl.TrustManagerFactory.getInstance(
+                javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm()
+            )
+            trustManager.init(null as KeyStore?)
+            
+            val x509TrustManager = trustManager.trustManagers
+                .filterIsInstance<javax.net.ssl.X509TrustManager>()
+                .firstOrNull()
+            
+            if (x509TrustManager != null) {
+                val acceptedIssuers = x509TrustManager.acceptedIssuers
+                val isInstalled = acceptedIssuers.any { cert ->
+                    cert.subjectDN.name.contains("RoRo Interceptor Root CA") ||
+                    cert.issuerDN.name.contains("RoRo Interceptor Root CA")
+                }
+                Log.d(TAG, "Certificate installed: $isInstalled")
+                isInstalled
+            } else {
+                Log.w(TAG, "No X509TrustManager found")
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking certificate installation", e)
+            false
+        }
+    }
+    
+    fun shouldReinstallCertificate(): Boolean {
+        if (!isCertificateInstalled()) {
+            Log.d(TAG, "Certificate not installed, should reinstall")
+            return true
+        }
+        
+        // Check if certificate is about to expire (within 30 days)
+        val thirtyDaysFromNow = Date(System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000)
+        return try {
+            caCert.checkValidity(thirtyDaysFromNow)
+            Log.d(TAG, "Certificate is valid, no need to reinstall")
+            false
+        } catch (e: Exception) {
+            Log.d(TAG, "Certificate expiring soon or invalid, should reinstall")
+            true
+        }
     }
     
     companion object {
