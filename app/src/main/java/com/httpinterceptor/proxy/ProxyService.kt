@@ -19,7 +19,6 @@ class ProxyService : Service() {
     
     private val binder = LocalBinder()
     private var proxyServer: SimpleProxyServer? = null
-    private var webServer: WebServerUI? = null
     private val listeners = CopyOnWriteArrayList<ProxyServiceListener>()
     private val requests = mutableListOf<HttpRequest>()
     
@@ -45,11 +44,7 @@ class ProxyService : Service() {
         rulesManager = RulesManager(this)
         
         // Start foreground immediately to keep service alive
-        startForeground(NOTIFICATION_ID, createNotification("Web UI disponible en http://localhost:8080"))
-        
-        // Start Web UI immediately when service is created
-        // It stays available even when proxy is stopped
-        startWebUI()
+        startForeground(NOTIFICATION_ID, createNotification("Servicio iniciado"))
         
         Log.d(TAG, "ProxyService created")
     }
@@ -63,27 +58,12 @@ class ProxyService : Service() {
         
         // Always ensure we're running in foreground
         startForeground(NOTIFICATION_ID, createNotification(
-            if (isProxyRunning()) "Proxy: http://0.0.0.0:2580 | Web UI: http://localhost:8080"
-            else "Web UI: http://localhost:8080 | Proxy detenido"
+            if (isProxyRunning()) "Proxy activo en puerto 2580"
+            else "Proxy detenido"
         ))
-        
-        // Ensure Web UI is running
-        startWebUI()
         
         // Return START_STICKY to restart service if killed by system
         return START_STICKY
-    }
-    
-    private fun startWebUI() {
-        if (webServer == null) {
-            try {
-                webServer = WebServerUI(8080, this)
-                webServer?.start()
-                Log.d(TAG, "Web UI started on port 8080")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to start Web UI", e)
-            }
-        }
     }
     
     fun startProxy(port: Int = 2580) {
@@ -121,11 +101,8 @@ class ProxyService : Service() {
                 .putBoolean("proxy_running", true)
                 .apply()
             
-            // Ensure Web UI is still running
-            startWebUI()
-            
             // Update notification with running status
-            val notification = createNotification("Proxy: 0.0.0.0:$port | Web UI: http://localhost:8080")
+            val notification = createNotification("Proxy activo en puerto $port")
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager?.notify(NOTIFICATION_ID, notification)
             
@@ -221,8 +198,6 @@ class ProxyService : Service() {
     
     override fun onDestroy() {
         stopProxy()
-        webServer?.stop()
-        webServer = null
         super.onDestroy()
     }
     

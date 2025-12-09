@@ -405,7 +405,7 @@ class MainActivity : AppCompatActivity() {
         val ipAddress = Formatter.formatIpAddress(wifiManager.connectionInfo.ipAddress)
         tvProxyInfo.text = """
             Proxy: $ipAddress:2580
-            Web UI: http://$ipAddress:8080
+            Web UI: http://$ipAddress:8888
             
             Configura tu dispositivo/app para usar este proxy.
             Instala el certificado CA para HTTPS.
@@ -652,7 +652,7 @@ class MainActivity : AppCompatActivity() {
     private fun openWebUI() {
         val wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
         val ipAddress = Formatter.formatIpAddress(wifiManager.connectionInfo.ipAddress)
-        val url = "http://$ipAddress:8080"
+        val url = "http://$ipAddress:8888"
         
         val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
         try {

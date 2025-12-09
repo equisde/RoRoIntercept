@@ -22,7 +22,7 @@ class WebServerService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 2
         private const val CHANNEL_ID = "web_server_channel"
-        const val WEB_PORT = 8081
+        const val WEB_PORT = 8888
         
         fun start(context: Context) {
             val intent = Intent(context, WebServerService::class.java)
@@ -516,7 +516,7 @@ class WebServer(port: Int, private val context: Context) : NanoHTTPD(port) {
                 </div>
                 <div class="stat">
                     <span>Web UI Port</span>
-                    <span class="stat-value">8081</span>
+                    <span class="stat-value">8888</span>
                 </div>
             </div>
             
