@@ -106,12 +106,10 @@ class MitmProxyServer(
     
     private inner class ProxyInitializer : ChannelInitializer<SocketChannel>() {
         override fun initChannel(ch: SocketChannel) {
-            ch.pipeline().addLast(
-                "idle-handler", IdleStateHandler(60, 30, 0),
-                "http-codec", HttpServerCodec(),
-                "http-aggregator", HttpObjectAggregator(50 * 1024 * 1024),
-                "proxy-handler", ProxyFrontendHandler()
-            )
+            ch.pipeline().addLast("idle-handler", IdleStateHandler(60, 30, 0, TimeUnit.SECONDS))
+            ch.pipeline().addLast("http-codec", HttpServerCodec())
+            ch.pipeline().addLast("http-aggregator", HttpObjectAggregator(50 * 1024 * 1024))
+            ch.pipeline().addLast("proxy-handler", ProxyFrontendHandler())
         }
     }
     
@@ -314,10 +312,11 @@ class MitmProxyServer(
                             
                             if (wasModified) {
                                 modified = modified.copy(headers = newHeaders, body = newBody, modified = true)
-                                if (newBody != null && newBody != request.body) {
+                                val bodyToWrite = newBody
+                                if (bodyToWrite != null && bodyToWrite != request.body) {
                                     nettyRequest.content().clear()
-                                    nettyRequest.content().writeBytes(newBody)
-                                    nettyRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, newBody.size)
+                                    nettyRequest.content().writeBytes(bodyToWrite)
+                                    nettyRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, bodyToWrite.size)
                                 }
                             }
                         }
@@ -360,11 +359,9 @@ class MitmProxyServer(
                 .channel(NioSocketChannel::class.java)
                 .handler(object : ChannelInitializer<SocketChannel>() {
                     override fun initChannel(ch: SocketChannel) {
-                        ch.pipeline().addLast(
-                            HttpClientCodec(),
-                            HttpObjectAggregator(50 * 1024 * 1024),
-                            HttpBackendHandler(ctx, httpRequest, requestId)
-                        )
+                        ch.pipeline().addLast(HttpClientCodec())
+                        ch.pipeline().addLast(HttpObjectAggregator(50 * 1024 * 1024))
+                        ch.pipeline().addLast(HttpBackendHandler(ctx, httpRequest, requestId))
                     }
                 })
             
@@ -411,12 +408,10 @@ class MitmProxyServer(
                                 .trustManager(InsecureTrustManagerFactory.INSTANCE)
                                 .build()
                             
-                            ch.pipeline().addLast(
-                                "ssl-client", clientSslContext.newHandler(ch.alloc(), host, targetPort),
-                                "http-codec-client", HttpClientCodec(),
-                                "http-aggregator-client", HttpObjectAggregator(50 * 1024 * 1024),
-                                "backend-handler", HttpBackendHandler(ctx, httpRequest, requestId)
-                            )
+                            ch.pipeline().addLast("ssl-client", clientSslContext.newHandler(ch.alloc(), host, targetPort))
+                            ch.pipeline().addLast("http-codec-client", HttpClientCodec())
+                            ch.pipeline().addLast("http-aggregator-client", HttpObjectAggregator(50 * 1024 * 1024))
+                            ch.pipeline().addLast("backend-handler", HttpBackendHandler(ctx, httpRequest, requestId))
                         } catch (e: SSLException) {
                             listener.onLog("[$requestId] SSL error: ${e.message}", "ERROR")
                         }
