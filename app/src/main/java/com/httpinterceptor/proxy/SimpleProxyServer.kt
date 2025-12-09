@@ -165,12 +165,12 @@ class SimpleProxyServer(
         
         private fun setupSSL(ctx: ChannelHandlerContext, host: String) {
             try {
-                Log.d(TAG, "🔐 Setting up SSL for: $host")
+                Log.d(TAG, "🔐 Setting up SSL MITM for: $host")
                 
-                // Generate certificate for this specific host
+                // Generate dynamic certificate for this specific host
                 val (cert, key) = certManager.generateServerCertificate(host)
                 
-                // Create SSL context with the generated certificate
+                // Create SSL context with our generated certificate
                 val sslContext = SslContextBuilder.forServer(key, cert)
                     .protocols("TLSv1.2", "TLSv1.3")
                     .build()
@@ -184,12 +184,12 @@ class SimpleProxyServer(
                 sslHandler.handshakeFuture().addListener { future ->
                     if (future.isSuccess) {
                         Log.d(TAG, "✅ SSL handshake successful for: $host")
-                        listener.onError("✅ SSL OK: $host")
+                        listener.onError("✅ SSL MITM ready: $host")
                         
-                        // After SSL handshake, add HTTP codecs
+                        // After SSL handshake, add HTTP codecs and MITM handler
                         ctx.pipeline().addLast("http-codec", HttpServerCodec())
-                        ctx.pipeline().addLast("http-aggregator", HttpObjectAggregator(10 * 1024 * 1024))
-                        ctx.pipeline().addLast("proxy-handler", ProxyHandler())
+                        ctx.pipeline().addLast("http-aggregator", HttpObjectAggregator(50 * 1024 * 1024))
+                        ctx.pipeline().addLast("mitm-handler", MitmHandler(host, targetPort, listener))
                         
                         // Start reading
                         ctx.read()
