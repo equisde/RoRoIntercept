@@ -192,20 +192,24 @@ class MitmProxyServer(
         }
         
         private fun handleHttpRequest(ctx: ChannelHandlerContext, fullRequest: FullHttpRequest, requestId: String) {
-            val url = fullRequest.uri()
+            val url = "http://${targetHost ?: ""}${fullRequest.uri()}"
             val headers = mutableMapOf<String, String>()
             fullRequest.headers().forEach { headers[it.key] = it.value }
-            val body = if (fullRequest.content().isReadable) fullRequest.content().toString(StandardCharsets.UTF_8) else ""
+            val body = if (fullRequest.content().isReadable) {
+                val bytes = ByteArray(fullRequest.content().readableBytes())
+                fullRequest.content().getBytes(fullRequest.content().readerIndex(), bytes)
+                bytes
+            } else null
             
             val httpRequest = com.httpinterceptor.model.HttpRequest(
                 id = requestCounter.incrementAndGet(),
                 timestamp = System.currentTimeMillis(),
                 method = fullRequest.method().name(),
                 url = url,
+                host = targetHost ?: "",
+                path = fullRequest.uri(),
                 headers = headers,
-                body = body,
-                protocol = "HTTP/1.1",
-                isHttps = false
+                body = body
             )
             
             listener.onRequestReceived(httpRequest)
@@ -216,17 +220,21 @@ class MitmProxyServer(
             val url = "https://${targetHost}${fullRequest.uri()}"
             val headers = mutableMapOf<String, String>()
             fullRequest.headers().forEach { headers[it.key] = it.value }
-            val body = if (fullRequest.content().isReadable) fullRequest.content().toString(StandardCharsets.UTF_8) else ""
+            val body = if (fullRequest.content().isReadable) {
+                val bytes = ByteArray(fullRequest.content().readableBytes())
+                fullRequest.content().getBytes(fullRequest.content().readerIndex(), bytes)
+                bytes
+            } else null
             
             val httpRequest = com.httpinterceptor.model.HttpRequest(
                 id = requestCounter.incrementAndGet(),
                 timestamp = System.currentTimeMillis(),
                 method = fullRequest.method().name(),
                 url = url,
+                host = targetHost ?: "",
+                path = fullRequest.uri(),
                 headers = headers,
-                body = body,
-                protocol = "HTTP/1.1",
-                isHttps = true
+                body = body
             )
             
             listener.onRequestReceived(httpRequest)
@@ -241,43 +249,88 @@ class MitmProxyServer(
             for (rule in rules) {
                 if (!rule.enabled) continue
                 
-                val urlMatches = when {
-                    rule.urlPattern.isEmpty() -> true
-                    rule.useRegex -> request.url.contains(Regex(rule.urlPattern))
-                    else -> request.url.contains(rule.urlPattern, ignoreCase = true)
+                val urlMatches = when (rule.matchType) {
+                    MatchType.CONTAINS -> request.url.contains(rule.urlPattern, ignoreCase = true)
+                    MatchType.REGEX -> request.url.contains(Regex(rule.urlPattern))
+                    MatchType.EXACT -> request.url.equals(rule.urlPattern, ignoreCase = true)
+                    MatchType.STARTS_WITH -> request.url.startsWith(rule.urlPattern, ignoreCase = true)
+                    MatchType.ENDS_WITH -> request.url.endsWith(rule.urlPattern, ignoreCase = true)
                 }
                 
                 if (!urlMatches) continue
                 
                 when (rule.action) {
-                    RuleAction.MODIFY_REQUEST -> {
-                        rule.modifications?.let { mods ->
+                    RuleAction.MODIFY -> {
+                        rule.modifyRequest?.let { mods ->
                             val newHeaders = modified.headers.toMutableMap()
-                            mods.modifyHeaders.forEach { (key, value) ->
+                            
+                            // Add/modify headers
+                            mods.modifyHeaders?.forEach { (key, value) ->
                                 newHeaders[key] = value
                                 nettyRequest.headers().set(key, value)
                                 wasModified = true
                             }
                             
-                            var newBody = modified.body
-                            mods.modifyBody.forEach { (search, replace) ->
-                                newBody = if (mods.useRegex) {
-                                    newBody.replace(Regex(search), replace)
-                                } else {
-                                    newBody.replace(search, replace)
-                                }
+                            // Remove headers
+                            mods.removeHeaders?.forEach { key ->
+                                newHeaders.remove(key)
+                                nettyRequest.headers().remove(key)
                                 wasModified = true
+                            }
+                            
+                            // Search & replace in headers
+                            mods.searchReplaceHeaders?.forEach { sr ->
+                                val updatedHeaders = mutableMapOf<String, String>()
+                                newHeaders.forEach { (k, v) ->
+                                    val newValue = applySearchReplace(v, sr)
+                                    updatedHeaders[k] = newValue
+                                    if (newValue != v) {
+                                        nettyRequest.headers().set(k, newValue)
+                                        wasModified = true
+                                    }
+                                }
+                                newHeaders.clear()
+                                newHeaders.putAll(updatedHeaders)
+                            }
+                            
+                            // Body modifications
+                            var newBody = modified.body
+                            
+                            // Complete body replacement
+                            if (mods.replaceBody != null) {
+                                newBody = mods.replaceBody.toByteArray(StandardCharsets.UTF_8)
+                                wasModified = true
+                            }
+                            
+                            // Search & replace in body
+                            mods.searchReplaceBody?.forEach { sr ->
+                                newBody?.let { bodyBytes ->
+                                    var bodyStr = bodyBytes.toString(StandardCharsets.UTF_8)
+                                    bodyStr = applySearchReplace(bodyStr, sr)
+                                    newBody = bodyStr.toByteArray(StandardCharsets.UTF_8)
+                                    wasModified = true
+                                }
                             }
                             
                             if (wasModified) {
                                 modified = modified.copy(headers = newHeaders, body = newBody, modified = true)
-                                if (newBody != request.body) {
+                                if (newBody != null && newBody != request.body) {
                                     nettyRequest.content().clear()
-                                    nettyRequest.content().writeBytes(newBody.toByteArray(StandardCharsets.UTF_8))
-                                    nettyRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, newBody.length)
+                                    nettyRequest.content().writeBytes(newBody)
+                                    nettyRequest.headers().set(HttpHeaderNames.CONTENT_LENGTH, newBody.size)
                                 }
                             }
                         }
+                    }
+                    RuleAction.BLOCK -> {
+                        // Block request - send 403 response
+                        val response = DefaultFullHttpResponse(
+                            HttpVersion.HTTP_1_1,
+                            HttpResponseStatus.FORBIDDEN
+                        )
+                        nettyRequest.content().clear()
+                        nettyRequest.release()
+                        return modified
                     }
                     else -> {}
                 }
@@ -455,6 +508,27 @@ class MitmProxyServer(
             listener.onLog("[$requestId] Backend error: ${cause.message}", "ERROR")
             ctx.close()
             inboundChannel.close()
+        }
+    }
+    
+    private fun applySearchReplace(text: String, sr: SearchReplace): String {
+        return if (sr.useRegex) {
+            val pattern = if (sr.caseSensitive) {
+                Regex(sr.search)
+            } else {
+                Regex(sr.search, RegexOption.IGNORE_CASE)
+            }
+            if (sr.replaceAll) {
+                text.replace(pattern, sr.replace)
+            } else {
+                text.replaceFirst(pattern, sr.replace)
+            }
+        } else {
+            if (sr.replaceAll) {
+                text.replace(sr.search, sr.replace, ignoreCase = !sr.caseSensitive)
+            } else {
+                text.replaceFirst(sr.search, sr.replace, ignoreCase = !sr.caseSensitive)
+            }
         }
     }
 }
