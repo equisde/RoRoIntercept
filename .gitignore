@@ -112,3 +112,5 @@ keystore.properties
 *.keystore
 keystore.properties
 keystore.b64
+*.keystore
+keystore.b64
