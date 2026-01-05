@@ -40,6 +40,11 @@ class MitmProxyServer(
     @Volatile
     private var rules = listOf<ProxyRule>()
     
+    private data class RequestRuleResult(
+        val request: com.httpinterceptor.model.HttpRequest,
+        val blockedResponse: FullHttpResponse? = null
+    )
+    
     interface ProxyListener {
         fun onRequestReceived(request: com.httpinterceptor.model.HttpRequest)
         fun onRequestModified(request: com.httpinterceptor.model.HttpRequest)
@@ -239,8 +244,26 @@ class MitmProxyServer(
                 body = body
             )
             
-            listener.onRequestReceived(httpRequest)
-            forwardHttpRequest(ctx, fullRequest, httpRequest, requestId, parsedHost, parsedPort, path)
+            val ruleResult = applyRequestRules(httpRequest, fullRequest)
+            if (ruleResult.blockedResponse != null) {
+                listener.onLog("[$requestId] Request blocked by rule", "WARN")
+                val blockedResponse = com.httpinterceptor.model.HttpResponse(
+                    requestId = httpRequest.id,
+                    statusCode = HttpResponseStatus.FORBIDDEN.code(),
+                    statusMessage = "Blocked",
+                    headers = mapOf(HttpHeaderNames.CONTENT_LENGTH.toString() to "0"),
+                    body = ByteArray(0),
+                    timestamp = System.currentTimeMillis(),
+                    modified = true
+                )
+                listener.onRequestReceived(ruleResult.request.copy(response = blockedResponse))
+                listener.onResponseReceived(ruleResult.request.copy(response = blockedResponse))
+                ctx.writeAndFlush(ruleResult.blockedResponse.retain()).addListener(ChannelFutureListener.CLOSE)
+                return
+            }
+            
+            listener.onRequestReceived(ruleResult.request)
+            forwardHttpRequest(ctx, fullRequest, ruleResult.request, requestId, parsedHost, parsedPort, path)
         }
         
         private fun handleHttpsRequest(ctx: ChannelHandlerContext, fullRequest: FullHttpRequest, requestId: String) {
@@ -264,27 +287,35 @@ class MitmProxyServer(
                 body = body
             )
             
-            listener.onRequestReceived(httpRequest)
-            val modifiedRequest = applyRequestRules(httpRequest, fullRequest)
-            forwardHttpsRequest(ctx, fullRequest, modifiedRequest, requestId)
+            val ruleResult = applyRequestRules(httpRequest, fullRequest)
+            if (ruleResult.blockedResponse != null) {
+                listener.onLog("[$requestId] Request blocked by rule", "WARN")
+                val blockedResponse = com.httpinterceptor.model.HttpResponse(
+                    requestId = httpRequest.id,
+                    statusCode = HttpResponseStatus.FORBIDDEN.code(),
+                    statusMessage = "Blocked",
+                    headers = mapOf(HttpHeaderNames.CONTENT_LENGTH.toString() to "0"),
+                    body = ByteArray(0),
+                    timestamp = System.currentTimeMillis(),
+                    modified = true
+                )
+                listener.onRequestReceived(ruleResult.request.copy(response = blockedResponse))
+                listener.onResponseReceived(ruleResult.request.copy(response = blockedResponse))
+                ctx.writeAndFlush(ruleResult.blockedResponse.retain()).addListener(ChannelFutureListener.CLOSE)
+                return
+            }
+            
+            listener.onRequestReceived(ruleResult.request)
+            forwardHttpsRequest(ctx, fullRequest, ruleResult.request, requestId)
         }
         
-        private fun applyRequestRules(request: com.httpinterceptor.model.HttpRequest, nettyRequest: FullHttpRequest): com.httpinterceptor.model.HttpRequest {
+        private fun applyRequestRules(request: com.httpinterceptor.model.HttpRequest, nettyRequest: FullHttpRequest): RequestRuleResult {
             var modified = request
             var wasModified = false
             
             for (rule in rules) {
                 if (!rule.enabled) continue
-                
-                val urlMatches = when (rule.matchType) {
-                    MatchType.CONTAINS -> request.url.contains(rule.urlPattern, ignoreCase = true)
-                    MatchType.REGEX -> request.url.contains(Regex(rule.urlPattern))
-                    MatchType.EXACT -> request.url.equals(rule.urlPattern, ignoreCase = true)
-                    MatchType.STARTS_WITH -> request.url.startsWith(rule.urlPattern, ignoreCase = true)
-                    MatchType.ENDS_WITH -> request.url.endsWith(rule.urlPattern, ignoreCase = true)
-                }
-                
-                if (!urlMatches) continue
+                if (!matchesRule(rule, request.url)) continue
                 
                 when (rule.action) {
                     RuleAction.MODIFY -> {
@@ -351,14 +382,16 @@ class MitmProxyServer(
                         }
                     }
                     RuleAction.BLOCK -> {
-                        // Block request - send 403 response
                         val response = DefaultFullHttpResponse(
                             HttpVersion.HTTP_1_1,
-                            HttpResponseStatus.FORBIDDEN
+                            HttpResponseStatus.FORBIDDEN,
+                            Unpooled.wrappedBuffer("Blocked by rule: ${rule.name}".toByteArray(StandardCharsets.UTF_8))
                         )
-                        nettyRequest.content().clear()
+                        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8")
+                        response.headers().set(HttpHeaderNames.CONTENT_LENGTH, response.content().readableBytes())
+                        response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE)
                         nettyRequest.release()
-                        return modified
+                        return RequestRuleResult(modified.copy(modified = wasModified), response)
                     }
                     else -> {}
                 }
@@ -368,7 +401,7 @@ class MitmProxyServer(
                 listener.onRequestModified(modified)
             }
             
-            return modified
+            return RequestRuleResult(modified)
         }
         
         private fun forwardHttpRequest(ctx: ChannelHandlerContext, request: FullHttpRequest, httpRequest: com.httpinterceptor.model.HttpRequest, requestId: String, host: String, port: Int, path: String) {
@@ -510,27 +543,38 @@ class MitmProxyServer(
             
             val headers = mutableMapOf<String, String>()
             response.headers().forEach { headers[it.key] = it.value }
-            val body = if (response.content().isReadable) response.content().toString(StandardCharsets.UTF_8) else ""
+            val bodyBytes = if (response.content().isReadable) {
+                ByteArray(response.content().readableBytes()).also {
+                    response.content().getBytes(response.content().readerIndex(), it)
+                }
+            } else null
             
             val httpResponse = com.httpinterceptor.model.HttpResponse(
                 requestId = httpRequest.id,
                 statusCode = response.status().code(),
                 statusMessage = response.status().reasonPhrase(),
                 headers = headers,
-                body = body.toByteArray(),
+                body = bodyBytes,
                 timestamp = System.currentTimeMillis()
             )
             
-            listener.onResponseReceived(httpRequest.copy(response = httpResponse))
+            val (finalResponse, outboundNettyResponse) = applyResponseRules(httpRequest, httpResponse, response)
+            val needsRelease = outboundNettyResponse !== response
+            
+            listener.onResponseReceived(httpRequest.copy(response = finalResponse))
             
             val clientResponse = DefaultFullHttpResponse(
-                response.protocolVersion(),
-                response.status(),
-                response.content().retain()
+                outboundNettyResponse.protocolVersion(),
+                outboundNettyResponse.status(),
+                outboundNettyResponse.content().retain()
             )
-            response.headers().forEach { clientResponse.headers().set(it.key, it.value) }
+            outboundNettyResponse.headers().forEach { clientResponse.headers().set(it.key, it.value) }
+            clientResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, clientResponse.content().readableBytes())
             
             inboundChannel.writeAndFlush(clientResponse).addListener(ChannelFutureListener {
+                if (needsRelease) {
+                    ReferenceCountUtil.release(outboundNettyResponse)
+                }
                 inboundChannel.read()
             })
         }
@@ -540,6 +584,126 @@ class MitmProxyServer(
             ctx.close()
             inboundChannel.close()
         }
+    }
+    
+    private fun matchesRule(rule: ProxyRule, url: String): Boolean {
+        return try {
+            when (rule.matchType) {
+                MatchType.CONTAINS -> url.contains(rule.urlPattern, ignoreCase = true)
+                MatchType.REGEX -> Regex(rule.urlPattern).containsMatchIn(url)
+                MatchType.EXACT -> url.equals(rule.urlPattern, ignoreCase = true)
+                MatchType.STARTS_WITH -> url.startsWith(rule.urlPattern, ignoreCase = true)
+                MatchType.ENDS_WITH -> url.endsWith(rule.urlPattern, ignoreCase = true)
+            }
+        } catch (e: Exception) {
+            listener.onLog("Invalid rule pattern: ${rule.urlPattern}", "WARN")
+            false
+        }
+    }
+    
+    private fun applyResponseRules(
+        httpRequest: com.httpinterceptor.model.HttpRequest,
+        appResponse: com.httpinterceptor.model.HttpResponse,
+        nettyResponse: FullHttpResponse
+    ): Pair<com.httpinterceptor.model.HttpResponse, FullHttpResponse> {
+        var modifiedResponse = appResponse
+        var wasModified = false
+        var workingNettyResponse = nettyResponse
+        var bodyBytes = appResponse.body
+        val newHeaders = appResponse.headers.toMutableMap()
+        
+        for (rule in rules) {
+            if (!rule.enabled) continue
+            if (!matchesRule(rule, httpRequest.url)) continue
+            
+            when (rule.action) {
+                RuleAction.BLOCK -> {
+                    val body = "Blocked by rule: ${rule.name}".toByteArray(StandardCharsets.UTF_8)
+                    val blocked = DefaultFullHttpResponse(
+                        HttpVersion.HTTP_1_1,
+                        HttpResponseStatus.FORBIDDEN,
+                        Unpooled.wrappedBuffer(body)
+                    )
+                    blocked.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8")
+                    blocked.headers().set(HttpHeaderNames.CONTENT_LENGTH, body.size)
+                    return Pair(
+                        modifiedResponse.copy(
+                            statusCode = HttpResponseStatus.FORBIDDEN.code(),
+                            statusMessage = "Blocked",
+                            body = body,
+                            headers = mapOf(
+                                HttpHeaderNames.CONTENT_TYPE.toString() to "text/plain; charset=UTF-8",
+                                HttpHeaderNames.CONTENT_LENGTH.toString() to body.size.toString()
+                            ),
+                            modified = true
+                        ),
+                        blocked
+                    )
+                }
+                RuleAction.MODIFY -> {
+                    val mods = rule.modifyResponse ?: continue
+                    
+                    mods.modifyHeaders?.forEach { (key, value) ->
+                        newHeaders[key] = value
+                        workingNettyResponse.headers().set(key, value)
+                        wasModified = true
+                    }
+                    
+                    mods.removeHeaders?.forEach { key ->
+                        newHeaders.remove(key)
+                        workingNettyResponse.headers().remove(key)
+                        wasModified = true
+                    }
+                    
+                    mods.searchReplaceHeaders?.forEach { sr ->
+                        val updatedHeaders = mutableMapOf<String, String>()
+                        newHeaders.forEach { (k, v) ->
+                            val newValue = applySearchReplace(v, sr)
+                            updatedHeaders[k] = newValue
+                            if (newValue != v) {
+                                workingNettyResponse.headers().set(k, newValue)
+                                wasModified = true
+                            }
+                        }
+                        newHeaders.clear()
+                        newHeaders.putAll(updatedHeaders)
+                    }
+                    
+                    mods.replaceBody?.let { replace ->
+                        bodyBytes = replace.toByteArray(StandardCharsets.UTF_8)
+                        wasModified = true
+                    }
+                    
+                    mods.searchReplaceBody?.forEach { sr ->
+                        bodyBytes?.let { bytes ->
+                            val current = String(bytes, StandardCharsets.UTF_8)
+                            val newBody = applySearchReplace(current, sr)
+                            if (newBody != current) {
+                                bodyBytes = newBody.toByteArray(StandardCharsets.UTF_8)
+                                wasModified = true
+                            }
+                        }
+                    }
+                }
+                else -> {}
+            }
+        }
+        
+        if (wasModified) {
+            val finalBody = bodyBytes ?: ByteArray(0)
+            workingNettyResponse.content().clear()
+            workingNettyResponse.content().writeBytes(finalBody)
+            workingNettyResponse.headers().set(HttpHeaderNames.CONTENT_LENGTH, finalBody.size)
+            newHeaders[HttpHeaderNames.CONTENT_LENGTH.toString()] = finalBody.size.toString()
+            
+            modifiedResponse = modifiedResponse.copy(
+                headers = newHeaders,
+                body = if (bodyBytes?.isNotEmpty() == true) finalBody else bodyBytes,
+                modified = true
+            )
+        }
+        
+        return Pair(modifiedResponse, workingNettyResponse)
     }
     
     private fun applySearchReplace(text: String, sr: SearchReplace): String {

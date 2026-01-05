@@ -5,22 +5,28 @@ import android.content.Intent
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.google.gson.Gson
 import com.httpinterceptor.model.HttpRequest
 import com.httpinterceptor.model.HttpResponse
 import com.httpinterceptor.model.ProxyRule
 import com.httpinterceptor.ui.MainActivity
 import com.httpinterceptor.utils.CertificateManager
 import com.httpinterceptor.utils.RulesManager
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.CopyOnWriteArrayList
 
 class ProxyService : Service() {
     
     private val binder = LocalBinder()
     private var proxyServer: MitmProxyServer? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     private val listeners = CopyOnWriteArrayList<ProxyServiceListener>()
     private val requests = mutableListOf<HttpRequest>()
+    private val gson = Gson()
     
     private lateinit var certManager: CertificateManager
     private lateinit var rulesManager: RulesManager
@@ -42,9 +48,11 @@ class ProxyService : Service() {
         createNotificationChannel()
         certManager = CertificateManager(this)
         rulesManager = RulesManager(this)
+        syncRulesToPrefs(rulesManager.getRules())
         
         // Start foreground immediately to keep service alive
         startForeground(NOTIFICATION_ID, createNotification("Servicio iniciado"))
+        acquireWakeLock()
         
         Log.d(TAG, "ProxyService created")
     }
@@ -70,6 +78,7 @@ class ProxyService : Service() {
         if (proxyServer != null) return
         
         try {
+            acquireWakeLock()
             proxyServer = MitmProxyServer(port, certManager, object : MitmProxyServer.ProxyListener {
                 override fun onRequestReceived(request: HttpRequest) {
                     synchronized(requests) {
@@ -79,22 +88,41 @@ class ProxyService : Service() {
                         }
                     }
                     listeners.forEach { it.onRequestReceived(request) }
+                    appendLog("REQUEST ${request.method} ${request.url}", "REQUEST")
                 }
                 
                 override fun onRequestModified(request: HttpRequest) {
-                    // Optional callback
+                    synchronized(requests) {
+                        val index = requests.indexOfFirst { it.id == request.id }
+                        if (index >= 0) {
+                            requests[index] = request
+                        }
+                    }
+                    appendLog("MODIFIED ${request.method} ${request.url}", "INFO")
                 }
                 
                 override fun onResponseReceived(request: HttpRequest) {
+                    synchronized(requests) {
+                        val index = requests.indexOfFirst { it.id == request.id }
+                        if (index >= 0) {
+                            requests[index] = request
+                        } else {
+                            requests.add(0, request)
+                        }
+                    }
                     listeners.forEach { 
                         if (request.response != null) {
                             it.onResponseReceived(request.id, request.response!!)
                         }
                     }
+                    request.response?.let {
+                        appendLog("RESPONSE ${it.statusCode} ${request.url}", "RESPONSE")
+                    }
                 }
                 
                 override fun onError(error: String) {
                     Log.e(TAG, "Proxy error: $error")
+                    appendLog("ERROR $error", "ERROR")
                 }
                 
                 override fun onLog(message: String, level: String) {
@@ -103,10 +131,12 @@ class ProxyService : Service() {
                         "WARN" -> Log.w(TAG, message)
                         else -> Log.d(TAG, message)
                     }
+                    appendLog(message, level)
                 }
             })
             
             proxyServer?.start()
+            proxyServer?.updateRules(rulesManager.getRules())
             
             // Update shared preferences
             getSharedPreferences("proxy_prefs", MODE_PRIVATE).edit()
@@ -119,8 +149,11 @@ class ProxyService : Service() {
             notificationManager?.notify(NOTIFICATION_ID, notification)
             
             listeners.forEach { it.onProxyStateChanged(true) }
+            appendLog("Proxy started on port $port", "SUCCESS")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start proxy", e)
+            appendLog("Failed to start proxy: ${e.message}", "ERROR")
+            releaseWakeLock()
             throw e
         }
     }
@@ -128,6 +161,7 @@ class ProxyService : Service() {
     fun stopProxy() {
         proxyServer?.stop()
         proxyServer = null
+        releaseWakeLock()
         
         // Update shared preferences
         getSharedPreferences("proxy_prefs", MODE_PRIVATE).edit()
@@ -141,11 +175,16 @@ class ProxyService : Service() {
         notificationManager?.notify(NOTIFICATION_ID, notification)
         
         listeners.forEach { it.onProxyStateChanged(false) }
+        appendLog("Proxy stopped", "WARN")
     }
     
     fun isProxyRunning(): Boolean = proxyServer != null
     
     fun getRequests(): List<HttpRequest> = requests.toList()
+    
+    fun getRequestById(id: Long): HttpRequest? = synchronized(requests) {
+        requests.firstOrNull { it.id == id }
+    }
     
     fun clearRequests() {
         synchronized(requests) {
@@ -163,11 +202,20 @@ class ProxyService : Service() {
     
     fun getRules(): List<ProxyRule> = rulesManager.getRules()
     
-    fun addRule(rule: ProxyRule) = rulesManager.addRule(rule)
+    fun addRule(rule: ProxyRule) {
+        rulesManager.addRule(rule)
+        refreshProxyRules()
+    }
     
-    fun updateRule(id: Long, rule: ProxyRule) = rulesManager.updateRule(id, rule)
+    fun updateRule(id: Long, rule: ProxyRule) {
+        rulesManager.updateRule(id, rule)
+        refreshProxyRules()
+    }
     
-    fun deleteRule(id: Long) = rulesManager.deleteRule(id)
+    fun deleteRule(id: Long) {
+        rulesManager.deleteRule(id)
+        refreshProxyRules()
+    }
     
     fun exportCertificate() = certManager.exportCACertificate()
     
@@ -209,12 +257,84 @@ class ProxyService : Service() {
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
+            .setOngoing(true)
             .build()
     }
     
     override fun onDestroy() {
         stopProxy()
+        releaseWakeLock()
         super.onDestroy()
+    }
+    
+    private fun refreshProxyRules() {
+        val rules = rulesManager.getRules()
+        proxyServer?.updateRules(rules)
+        syncRulesToPrefs(rules)
+        appendLog("Rules synced (${rules.size})", "INFO")
+    }
+    
+    private fun syncRulesToPrefs(rules: List<ProxyRule>) {
+        try {
+            val json = gson.toJson(rules)
+            getSharedPreferences("proxy_rules", MODE_PRIVATE).edit()
+                .putString("rules", json)
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync rules to prefs", e)
+        }
+    }
+    
+    private fun appendLog(message: String, level: String = "INFO") {
+        try {
+            val prefs = getSharedPreferences("proxy_logs", MODE_PRIVATE)
+            val existing = prefs.getString("logs", "[]") ?: "[]"
+            val logs = JSONArray(existing)
+            val logEntry = JSONObject().apply {
+                put("timestamp", System.currentTimeMillis())
+                put("message", message)
+                put("type", level.lowercase())
+            }
+            logs.put(logEntry)
+            // Trim to last 200 entries
+            val trimmed = JSONArray()
+            val start = (logs.length() - 200).coerceAtLeast(0)
+            for (i in start until logs.length()) {
+                trimmed.put(logs.getJSONObject(i))
+            }
+            prefs.edit().putString("logs", trimmed.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to append log", e)
+        }
+    }
+    
+    private fun acquireWakeLock() {
+        try {
+            if (wakeLock == null) {
+                val pm = getSystemService(POWER_SERVICE) as PowerManager
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RoRoInterceptor::ProxyWakeLock").apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+                appendLog("WakeLock acquired for proxy", "INFO")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to acquire wake lock", e)
+        }
+    }
+    
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                    appendLog("WakeLock released", "INFO")
+                }
+            }
+            wakeLock = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to release wake lock", e)
+        }
     }
     
     companion object {

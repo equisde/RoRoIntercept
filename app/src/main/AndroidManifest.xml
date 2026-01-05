@@ -66,6 +66,11 @@
             android:parentActivityName=".ui.MainActivity"
             android:label="Crash Logs" />
         
+        <activity
+            android:name=".ui.RulesActivity"
+            android:parentActivityName=".ui.MainActivity"
+            android:label="Reglas" />
+        
         <service
             android:name=".proxy.ProxyService"
             android:enabled="true"

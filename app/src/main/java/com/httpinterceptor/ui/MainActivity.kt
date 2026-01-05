@@ -674,8 +674,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun openRulesActivity() {
-        // TODO: Implement rules activity
-        android.widget.Toast.makeText(this, "Usa la Web UI para gestionar reglas", android.widget.Toast.LENGTH_SHORT).show()
+        val intent = Intent(this, RulesActivity::class.java)
+        startActivity(intent)
     }
     
     private fun openWebUI() {

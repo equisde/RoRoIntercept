@@ -7,7 +7,9 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.google.gson.Gson
 import com.httpinterceptor.R
+import com.httpinterceptor.utils.RulesManager
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.*
 import org.json.JSONArray
@@ -18,6 +20,7 @@ class WebServerService : Service() {
     private var webServer: WebServer? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private lateinit var rulesManager: RulesManager
     
     companion object {
         private const val NOTIFICATION_ID = 2
@@ -41,6 +44,7 @@ class WebServerService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        rulesManager = RulesManager(this)
         acquireWakeLock()
         startWebServer()
     }
@@ -80,7 +84,7 @@ class WebServerService : Service() {
     
     private fun startWebServer() {
         try {
-            webServer = WebServer(WEB_PORT, this)
+            webServer = WebServer(WEB_PORT, this, rulesManager)
             webServer?.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false)
             updateNotification("Web UI running on port $WEB_PORT")
         } catch (e: IOException) {
@@ -125,7 +129,13 @@ class WebServerService : Service() {
     }
 }
 
-class WebServer(port: Int, private val context: Context) : NanoHTTPD(port) {
+class WebServer(
+    port: Int,
+    private val context: Context,
+    private val rulesManager: RulesManager,
+) : NanoHTTPD(port) {
+    
+    private val gson = Gson()
     
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
@@ -207,10 +217,13 @@ class WebServer(port: Int, private val context: Context) : NanoHTTPD(port) {
     }
     
     private fun handleGetRules(): Response {
-        val sharedPrefs = context.getSharedPreferences("proxy_rules", Context.MODE_PRIVATE)
-        val rulesJson = sharedPrefs.getString("rules", "[]") ?: "[]"
-        
-        return newFixedLengthResponse(Response.Status.OK, "application/json", rulesJson)
+        return try {
+            val rules = rulesManager.getRules()
+            val json = gson.toJson(rules)
+            newFixedLengthResponse(Response.Status.OK, "application/json", json)
+        } catch (e: Exception) {
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", "[]")
+        }
     }
     
     private fun serveStaticFile(uri: String): Response {

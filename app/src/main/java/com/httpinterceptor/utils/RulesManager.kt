@@ -17,6 +17,7 @@ class RulesManager(private val context: Context) {
         loadRules()
     }
     
+    @Synchronized
     private fun loadRules() {
         if (rulesFile.exists()) {
             try {
@@ -32,6 +33,7 @@ class RulesManager(private val context: Context) {
         }
     }
     
+    @Synchronized
     private fun saveRules() {
         try {
             val json = gson.toJson(rules)
@@ -42,11 +44,13 @@ class RulesManager(private val context: Context) {
         }
     }
     
+    @Synchronized
     fun addRule(rule: ProxyRule) {
         rules.add(rule)
         saveRules()
     }
     
+    @Synchronized
     fun updateRule(ruleId: Long, updatedRule: ProxyRule) {
         val index = rules.indexOfFirst { it.id == ruleId }
         if (index != -1) {
@@ -55,13 +59,16 @@ class RulesManager(private val context: Context) {
         }
     }
     
+    @Synchronized
     fun deleteRule(ruleId: Long) {
         rules.removeIf { it.id == ruleId }
         saveRules()
     }
     
+    @Synchronized
     fun getRules(): List<ProxyRule> = rules.toList()
     
+    @Synchronized
     fun getEnabledRules(): List<ProxyRule> = rules.filter { it.enabled }
     
     fun findMatchingRules(url: String): List<ProxyRule> {
