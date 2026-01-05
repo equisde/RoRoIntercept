@@ -46,6 +46,7 @@ class WebServerService : Service() {
         createNotificationChannel()
         rulesManager = RulesManager(this)
         acquireWakeLock()
+        startForeground(NOTIFICATION_ID, createNotification("Web UI iniciando"))
         startWebServer()
     }
     

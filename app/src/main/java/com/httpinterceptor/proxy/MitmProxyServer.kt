@@ -174,7 +174,9 @@ class MitmProxyServer(
                 if (future.isSuccess) {
                     try {
                         val (cert, privateKey) = certificateManager.generateServerCertificate(targetHost!!)
-                        val sslContext = SslContextBuilder.forServer(privateKey, cert).build()
+                        val sslContext = SslContextBuilder
+                            .forServer(privateKey, cert, certificateManager.getCACertificate())
+                            .build()
                         
                         ctx.pipeline().remove("http-codec")
                         ctx.pipeline().remove("http-aggregator")
