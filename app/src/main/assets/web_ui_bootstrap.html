@@ -123,47 +123,73 @@
               <small class="small-muted d-block mt-2">Ej: URL CONTAINS "api" AND METHOD EXACT "GET".</small>
             </div>
             <div class="row g-2">
-              <div class="col-12 col-md-6"><label class="form-label">Acción</label><select class="form-select roro-surface-2" id="ruleAction" onchange="toggleModifySection()"><option value="MODIFY">Modificar</option><option value="BLOCK">Bloquear</option><option value="ALLOW">Permitir</option></select></div>
-              <div class="col-12 col-md-6" id="applyToWrap"><label class="form-label">Aplicar a</label><select class="form-select roro-surface-2" id="ruleApplyTo"><option value="REQUEST">Request</option><option value="RESPONSE">Response</option><option value="BOTH" selected>Request + Response</option></select></div>
+              <div class="col-12 col-md-4">
+                <label class="form-label">Acción</label>
+                <select class="form-select roro-surface-2" id="ruleAction" onchange="toggleModifySection()">
+                  <option value="MODIFY">Modificar</option>
+                  <option value="BLOCK">Bloquear</option>
+                  <option value="ALLOW">Permitir</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-4" id="applyToWrap">
+                <label class="form-label">Modificar en</label>
+                <select class="form-select roro-surface-2" id="ruleApplyTo">
+                  <option value="REQUEST">Request</option>
+                  <option value="RESPONSE">Response</option>
+                  <option value="BOTH" selected>Request + Response</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-4" id="modifyPartWrap">
+                <label class="form-label">Parte</label>
+                <select class="form-select roro-surface-2" id="ruleModifyPart" onchange="toggleModifyParts()">
+                  <option value="HEADERS">Headers</option>
+                  <option value="BODY">Body</option>
+                  <option value="BOTH" selected>Headers + Body</option>
+                </select>
+              </div>
             </div>
+
             <div id="modifySection" class="mt-3">
-              <div class="mb-3"><label class="form-label">Headers a modificar (JSON)</label><textarea class="form-control roro-surface-2" id="ruleHeaders" rows="4"></textarea></div>
-              <div class="mb-3"><label class="form-label">Headers a remover (coma)</label><input class="form-control roro-surface-2" id="removeHeaders" type="text"></div>
-              <div class="mb-3">
-                <label class="form-label">Buscar y reemplazar en Headers</label>
-                <div class="row g-2">
-                  <div class="col-12 col-md-3">
-                    <select class="form-select form-select-sm roro-surface-2" id="srhMode">
-                      <option value="TEXT" selected>Texto</option>
-                      <option value="REGEX">Regex</option>
-                    </select>
+              <div id="headersSection">
+                <div class="mb-3"><label class="form-label">Headers a modificar (JSON)</label><textarea class="form-control roro-surface-2" id="ruleHeaders" rows="4"></textarea></div>
+                <div class="mb-3"><label class="form-label">Headers a remover (coma)</label><input class="form-control roro-surface-2" id="removeHeaders" type="text"></div>
+                <div class="mb-3">
+                  <label class="form-label">Buscar y reemplazar en Headers</label>
+                  <div class="row g-2">
+                    <div class="col-12 col-md-3">
+                      <select class="form-select form-select-sm roro-surface-2" id="srhMode">
+                        <option value="TEXT" selected>Texto</option>
+                        <option value="REGEX">Regex</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                      <input class="form-control form-control-sm roro-surface-2" id="srhSearch" type="text" placeholder="String a buscar">
+                    </div>
+                    <div class="col-12 col-md-5">
+                      <input class="form-control form-control-sm roro-surface-2" id="srhReplace" type="text" placeholder="String a reemplazar">
+                    </div>
                   </div>
-                  <div class="col-12 col-md-4">
-                    <input class="form-control form-control-sm roro-surface-2" id="srhSearch" type="text" placeholder="String a buscar">
-                  </div>
-                  <div class="col-12 col-md-5">
-                    <input class="form-control form-control-sm roro-surface-2" id="srhReplace" type="text" placeholder="String a reemplazar">
-                  </div>
+                  <small class="small-muted d-block mt-2">Se aplica a todos los valores de headers.</small>
                 </div>
-                <small class="small-muted d-block mt-2">Se aplica a todos los valores de headers.</small>
               </div>
 
-              <div class="mb-3"><label class="form-label">Body reemplazo</label><textarea class="form-control roro-surface-2" id="ruleBody" rows="4"></textarea></div>
-
-              <div class="mb-3">
-                <label class="form-label">Buscar y reemplazar en Body</label>
-                <div class="row g-2">
-                  <div class="col-12 col-md-3">
-                    <select class="form-select form-select-sm roro-surface-2" id="srbMode">
-                      <option value="TEXT" selected>Texto</option>
-                      <option value="REGEX">Regex</option>
-                    </select>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <input class="form-control form-control-sm roro-surface-2" id="srbSearch" type="text" placeholder="String a buscar">
-                  </div>
-                  <div class="col-12 col-md-5">
-                    <input class="form-control form-control-sm roro-surface-2" id="srbReplace" type="text" placeholder="String a reemplazar">
+              <div id="bodySection">
+                <div class="mb-3"><label class="form-label">Body reemplazo</label><textarea class="form-control roro-surface-2" id="ruleBody" rows="4"></textarea></div>
+                <div class="mb-3">
+                  <label class="form-label">Buscar y reemplazar en Body</label>
+                  <div class="row g-2">
+                    <div class="col-12 col-md-3">
+                      <select class="form-select form-select-sm roro-surface-2" id="srbMode">
+                        <option value="TEXT" selected>Texto</option>
+                        <option value="REGEX">Regex</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-4">
+                      <input class="form-control form-control-sm roro-surface-2" id="srbSearch" type="text" placeholder="String a buscar">
+                    </div>
+                    <div class="col-12 col-md-5">
+                      <input class="form-control form-control-sm roro-surface-2" id="srbReplace" type="text" placeholder="String a reemplazar">
+                    </div>
                   </div>
                 </div>
               </div>
@@ -408,11 +434,19 @@
       addConditionRow({ field: 'URL', matchType: 'CONTAINS', value: '' });
     }
 
+    function toggleModifyParts() {
+      const part = document.getElementById('ruleModifyPart')?.value || 'BOTH';
+      document.getElementById('headersSection').style.display = (part === 'HEADERS' || part === 'BOTH') ? 'block' : 'none';
+      document.getElementById('bodySection').style.display = (part === 'BODY' || part === 'BOTH') ? 'block' : 'none';
+    }
+
     function toggleModifySection() {
       const action = document.getElementById('ruleAction').value;
       const show = action === 'MODIFY';
       document.getElementById('modifySection').style.display = show ? 'block' : 'none';
       document.getElementById('applyToWrap').style.display = show ? 'block' : 'none';
+      document.getElementById('modifyPartWrap').style.display = show ? 'block' : 'none';
+      if (show) toggleModifyParts();
     }
 
     function showRuleModal() {
@@ -445,7 +479,6 @@
       const legacyUrlPattern = firstUrl ? firstUrl.value : '';
       const legacyMatchType = firstUrl ? firstUrl.matchType : 'CONTAINS';
 
-      const mods = {};
       const headers = document.getElementById('ruleHeaders').value;
       const removeHeaders = document.getElementById('removeHeaders').value;
 
@@ -459,14 +492,23 @@
       const srbSearch = (document.getElementById('srbSearch')?.value || '').trim();
       const srbReplace = document.getElementById('srbReplace')?.value ?? '';
 
-      if (headers) { try { mods.modifyHeaders = JSON.parse(headers); } catch (e) { alert('Error en JSON de headers: ' + e.message); return; } }
-      if (removeHeaders) { mods.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h); }
-      if (srhSearch) { mods.searchReplaceHeaders = [{ search: srhSearch, replace: String(srhReplace), useRegex: srhMode === 'REGEX' }]; }
-      if (body) { mods.replaceBody = body; }
-      if (srbSearch) { mods.searchReplaceBody = [{ search: srbSearch, replace: String(srbReplace), useRegex: srbMode === 'REGEX' }]; }
+      const part = document.getElementById('ruleModifyPart')?.value || 'BOTH';
+
+      const headerMods = {};
+      if (headers) { try { headerMods.modifyHeaders = JSON.parse(headers); } catch (e) { alert('Error en JSON de headers: ' + e.message); return; } }
+      if (removeHeaders) { headerMods.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h); }
+      if (srhSearch) { headerMods.searchReplaceHeaders = [{ search: srhSearch, replace: String(srhReplace), useRegex: srhMode === 'REGEX' }]; }
+
+      const bodyMods = {};
+      if (body) { bodyMods.replaceBody = body; }
+      if (srbSearch) { bodyMods.searchReplaceBody = [{ search: srbSearch, replace: String(srbReplace), useRegex: srbMode === 'REGEX' }]; }
+
+      const merged = {};
+      if (part === 'HEADERS' || part === 'BOTH') Object.assign(merged, headerMods);
+      if (part === 'BODY' || part === 'BOTH') Object.assign(merged, bodyMods);
 
       const applyTo = document.getElementById('ruleApplyTo').value;
-      const modsObj = Object.keys(mods).length > 0 ? mods : null;
+      const modsObj = Object.keys(merged).length > 0 ? merged : null;
 
       const rule = {
         id: Date.now(),
