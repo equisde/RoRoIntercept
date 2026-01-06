@@ -70,21 +70,29 @@ class RulesManager(private val context: Context) {
     
     @Synchronized
     fun getEnabledRules(): List<ProxyRule> = rules.filter { it.enabled }
-    
+
+    @Synchronized
+    fun reload() {
+        loadRules()
+    }
+
     fun findMatchingRules(url: String): List<ProxyRule> {
         return getEnabledRules().filter { rule ->
-            when (rule.matchType) {
-                com.httpinterceptor.model.MatchType.CONTAINS -> url.contains(rule.urlPattern)
-                com.httpinterceptor.model.MatchType.EXACT -> url == rule.urlPattern
-                com.httpinterceptor.model.MatchType.STARTS_WITH -> url.startsWith(rule.urlPattern)
-                com.httpinterceptor.model.MatchType.ENDS_WITH -> url.endsWith(rule.urlPattern)
-                com.httpinterceptor.model.MatchType.REGEX -> {
-                    try {
-                        Regex(rule.urlPattern).matches(url)
-                    } catch (e: Exception) {
-                        false
-                    }
+            try {
+                when (rule.matchType) {
+                    com.httpinterceptor.model.MatchType.CONTAINS -> url.contains(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.NOT_CONTAINS -> !url.contains(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.EXACT -> url.equals(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.NOT_EXACT -> !url.equals(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.STARTS_WITH -> url.startsWith(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.NOT_STARTS_WITH -> !url.startsWith(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.ENDS_WITH -> url.endsWith(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.NOT_ENDS_WITH -> !url.endsWith(rule.urlPattern, ignoreCase = true)
+                    com.httpinterceptor.model.MatchType.REGEX -> Regex(rule.urlPattern).containsMatchIn(url)
+                    com.httpinterceptor.model.MatchType.NOT_REGEX -> !Regex(rule.urlPattern).containsMatchIn(url)
                 }
+            } catch (_: Exception) {
+                false
             }
         }
     }

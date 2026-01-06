@@ -47,15 +47,29 @@ data class ProxyRule(
     val matchType: MatchType,
     val action: RuleAction,
     val modifyRequest: ModifyAction? = null,
-    val modifyResponse: ModifyAction? = null
+    val modifyResponse: ModifyAction? = null,
+    val methods: List<String>? = null,          // Allowed HTTP methods
+    val statusCodes: List<Int>? = null,         // Response status filter (for response actions)
+    val redirectTo: String? = null,             // Redirect target URL
+    val mockResponse: MockResponse? = null,     // Static response
+    val delayMs: Long? = null                   // Delay (throttling) before forwarding
 )
 
 enum class MatchType {
-    CONTAINS, REGEX, EXACT, STARTS_WITH, ENDS_WITH
+    CONTAINS,
+    REGEX,
+    EXACT,
+    STARTS_WITH,
+    ENDS_WITH,
+    NOT_CONTAINS,
+    NOT_REGEX,
+    NOT_EXACT,
+    NOT_STARTS_WITH,
+    NOT_ENDS_WITH
 }
 
 enum class RuleAction {
-    ALLOW, BLOCK, MODIFY
+    ALLOW, BLOCK, MODIFY, REDIRECT, MOCK_RESPONSE, DELAY
 }
 
 data class ModifyAction(
@@ -67,7 +81,11 @@ data class ModifyAction(
     // Body modification
     val modifyBody: String? = null,                  // Regex to remove from body
     val replaceBody: String? = null,                 // Complete body replacement
-    val searchReplaceBody: List<SearchReplace>? = null  // Find & replace in body
+    val searchReplaceBody: List<SearchReplace>? = null,  // Find & replace in body
+    
+    // Status modification (response)
+    val statusCode: Int? = null,
+    val statusMessage: String? = null
 )
 
 data class SearchReplace(
@@ -76,4 +94,11 @@ data class SearchReplace(
     val useRegex: Boolean = false, // Use regex for search
     val caseSensitive: Boolean = true, // Case sensitive matching
     val replaceAll: Boolean = true     // Replace all occurrences or just first
+)
+
+data class MockResponse(
+    val statusCode: Int = 200,
+    val statusMessage: String = "OK",
+    val headers: Map<String, String>? = null,
+    val body: String? = null
 )

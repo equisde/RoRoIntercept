@@ -851,14 +851,19 @@
                 container.innerHTML = '<div class="log-line"><span class="timestamp">[00:00:00.000]</span> No hay logs disponibles</div>';
                 return;
             }
-            
+
             container.innerHTML = logs.slice(-200).reverse().map(log => {
+                const msg = (log && typeof log === 'object') ? (log.message ?? JSON.stringify(log)) : String(log);
+                const type = (log && typeof log === 'object') ? String(log.type ?? '') : '';
+                const ts = (log && typeof log === 'object' && log.timestamp) ? new Date(log.timestamp).toLocaleTimeString() : '00:00:00.000';
+
                 let className = 'log-line';
-                if (log.toLowerCase().includes('error')) className += ' error';
-                if (log.toLowerCase().includes('warning')) className += ' warning';
-                return `<div class="${className}">${log}</div>`;
+                if (type.toLowerCase().includes('error') || msg.toLowerCase().includes('error')) className += ' error';
+                if (type.toLowerCase().includes('warn') || msg.toLowerCase().includes('warning')) className += ' warning';
+
+                return `<div class="${className}"><span class="timestamp">[${ts}]</span> ${msg}</div>`;
             }).join('');
-            
+
             container.scrollTop = 0;
         }
         

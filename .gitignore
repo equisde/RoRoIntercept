@@ -14,7 +14,8 @@ bin/
 gen/
 out/
 release/
-
+fidd/
+fidd/*
 # Gradle files
 .gradle/
 build/

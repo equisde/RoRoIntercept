@@ -83,6 +83,33 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private var pendingExportBytes: ByteArray? = null
+    private var pendingExportMimeType: String = "application/octet-stream"
+    private var pendingExportFileName: String = "RoRoInterceptorCA.crt"
+    private var pendingExportFormatLabel: String = "CRT"
+
+    private val createDocumentLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data
+        val bytes = pendingExportBytes
+
+        if (result.resultCode == RESULT_OK && uri != null && bytes != null) {
+            try {
+                contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+                showExportSuccessDialog(uri, pendingExportFileName, pendingExportFormatLabel, pendingExportMimeType)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(
+                    this,
+                    "Error exportando certificado: ${e.message}",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+
+        pendingExportBytes = null
+    }
     
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -243,54 +270,8 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun checkStoragePermissionsAndStart() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            // Android 13+ - Check media permissions
-            val permissionsToRequest = mutableListOf<String>()
-            
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.READ_MEDIA_IMAGES
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.READ_MEDIA_IMAGES)
-            }
-            
-            if (permissionsToRequest.isNotEmpty()) {
-                storagePermissionLauncher.launch(permissionsToRequest.toTypedArray())
-                return
-            }
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            // Android 11-12 - Check if has manage storage
-            if (!Environment.isExternalStorageManager()) {
-                showManageStorageDialog()
-                return
-            }
-        } else {
-            // Android 10 and below
-            val permissionsToRequest = mutableListOf<String>()
-            
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
-            
-            if (ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.READ_EXTERNAL_STORAGE
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                permissionsToRequest.add(Manifest.permission.READ_EXTERNAL_STORAGE)
-            }
-            
-            if (permissionsToRequest.isNotEmpty()) {
-                storagePermissionLauncher.launch(permissionsToRequest.toTypedArray())
-                return
-            }
-        }
-        
+        // Storage permissions are not required to run the proxy.
+        // Certificate export uses SAF (Storage Access Framework), which works on Android 10–15.
         actuallyStartProxy()
     }
     
@@ -500,78 +481,38 @@ class MainActivity : AppCompatActivity() {
     
     private fun exportCertificateFormat(format: String) {
         proxyService?.let { service ->
-            try {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                
-                val (certBytes, fileName) = when (format) {
-                    "PEM" -> Pair(service.getCertificateBytesPEM(), "RoRoInterceptorCA.pem")
-                    "DER" -> Pair(service.getCertificateBytesDER(), "RoRoInterceptorCA.der")
-                    "CRT" -> Pair(service.getCertificateBytesCRT(), "RoRoInterceptorCA.crt")
-                    "CER" -> Pair(service.getCertificateBytesCER(), "RoRoInterceptorCA.cer")
-                    else -> return@let
-                }
-                
-                val certFile = File(downloadsDir, fileName)
-                certFile.writeBytes(certBytes)
-                
-                showExportSuccessDialog(certFile, format)
-                    
-            } catch (e: Exception) {
-                android.widget.Toast.makeText(
-                    this,
-                    "Error exportando certificado: ${e.message}",
-                    android.widget.Toast.LENGTH_SHORT
-                ).show()
+            val (certBytes, fileName, mimeType) = when (format) {
+                "PEM" -> Triple(service.getCertificateBytesPEM(), "RoRoInterceptorCA.pem", "text/plain")
+                "DER" -> Triple(service.getCertificateBytesDER(), "RoRoInterceptorCA.der", "application/octet-stream")
+                "CRT" -> Triple(service.getCertificateBytesCRT(), "RoRoInterceptorCA.crt", "application/x-x509-ca-cert")
+                "CER" -> Triple(service.getCertificateBytesCER(), "RoRoInterceptorCA.cer", "application/x-x509-ca-cert")
+                else -> return@let
             }
+
+            launchCreateDocument(certBytes, fileName, mimeType, format)
         }
     }
-    
+
     private fun exportAllFormats() {
         proxyService?.let { service ->
             try {
-                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                
-                // Export all formats - ONLY CERTIFICATE, NO PRIVATE KEY
-                val pemFile = File(downloadsDir, "RoRoInterceptorCA.pem")
-                pemFile.writeBytes(service.getCertificateBytesPEM())
-                
-                val derFile = File(downloadsDir, "RoRoInterceptorCA.der")
-                derFile.writeBytes(service.getCertificateBytesDER())
-                
-                val crtFile = File(downloadsDir, "RoRoInterceptorCA.crt")
-                crtFile.writeBytes(service.getCertificateBytesCRT())
-                
-                val cerFile = File(downloadsDir, "RoRoInterceptorCA.cer")
-                cerFile.writeBytes(service.getCertificateBytesCER())
-                
-                androidx.appcompat.app.AlertDialog.Builder(this)
-                    .setTitle("Certificados Exportados")
-                    .setMessage("""
-                        ✓ Certificados guardados en Descargas:
-                        
-                        • RoRoInterceptorCA.pem (PEM - texto)
-                        • RoRoInterceptorCA.der (DER - binario)
-                        • RoRoInterceptorCA.crt (CRT - binario)
-                        • RoRoInterceptorCA.cer (CER - binario)
-                        
-                        ℹ Recomendado para Android: .crt o .cer
-                        
-                        Todos contienen solo el certificado público (sin clave privada) y NO requieren contraseña.
-                    """.trimIndent())
-                    .setPositiveButton("Ver archivos") { _, _ ->
-                        openCertificateFile(crtFile)
+                val zipBytes = java.io.ByteArrayOutputStream().use { bos ->
+                    java.util.zip.ZipOutputStream(bos).use { zos ->
+                        fun add(name: String, bytes: ByteArray) {
+                            zos.putNextEntry(java.util.zip.ZipEntry(name))
+                            zos.write(bytes)
+                            zos.closeEntry()
+                        }
+
+                        add("RoRoInterceptorCA.pem", service.getCertificateBytesPEM())
+                        add("RoRoInterceptorCA.der", service.getCertificateBytesDER())
+                        add("RoRoInterceptorCA.crt", service.getCertificateBytesCRT())
+                        add("RoRoInterceptorCA.cer", service.getCertificateBytesCER())
                     }
-                    .setNegativeButton("Instrucciones") { _, _ ->
-                        showManualInstructions(downloadsDir.absolutePath)
-                    }
-                    .show()
-                    
-                android.widget.Toast.makeText(
-                    this,
-                    "✓ 3 formatos exportados",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
-                    
+                    bos.toByteArray()
+                }
+
+                launchCreateDocument(zipBytes, "RoRoInterceptorCA.zip", "application/zip", "ZIP")
             } catch (e: Exception) {
                 android.widget.Toast.makeText(
                     this,
@@ -581,36 +522,68 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-    
-    private fun showExportSuccessDialog(certFile: File, format: String) {
-        val formatInfo = when (format) {
-            "PEM" -> "Formato estándar, recomendado para Android"
-            "DER" -> "Formato binario, compatible con algunos dispositivos"
-            "P12" -> "Formato PKCS#12 con contraseña vacía"
+
+    private fun launchCreateDocument(bytes: ByteArray, fileName: String, mimeType: String, formatLabel: String) {
+        pendingExportBytes = bytes
+        pendingExportMimeType = mimeType
+        pendingExportFileName = fileName
+        pendingExportFormatLabel = formatLabel
+
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = mimeType
+            putExtra(Intent.EXTRA_TITLE, fileName)
+        }
+        createDocumentLauncher.launch(intent)
+    }
+
+    private fun showExportSuccessDialog(uri: Uri, fileName: String, formatLabel: String, mimeType: String) {
+        val formatInfo = when (formatLabel) {
+            "PEM" -> "Formato estándar (texto)."
+            "DER" -> "Formato binario (DER)."
+            "CRT", "CER" -> "Recomendado para Android (CA)."
+            "ZIP" -> "Archivo ZIP con todos los formatos."
             else -> ""
         }
-        
+
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Certificado $format Exportado")
+            .setTitle("Exportación completada")
             .setMessage("""
-                ✓ Certificado guardado en:
-                ${certFile.name}
-                
+                ✓ Guardado como:
+                $fileName
+
                 $formatInfo
-                
+
                 Para interceptar tráfico HTTPS, instala este certificado en:
                 Configuración → Seguridad → Cifrado y credenciales → Instalar un certificado → Certificado de CA
             """.trimIndent())
-            .setPositiveButton("Abrir Archivo") { _, _ ->
-                openCertificateFile(certFile)
+            .setPositiveButton("Abrir") { _, _ ->
+                openCertificateUri(uri, mimeType)
             }
             .setNeutralButton("Probar otro formato") { _, _ ->
                 exportCertificate()
             }
             .setNegativeButton("Instrucciones") { _, _ ->
-                showManualInstructions(certFile.absolutePath)
+                showManualInstructions(fileName)
             }
             .show()
+    }
+
+    private fun openCertificateUri(uri: Uri, mimeType: String) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(
+                this,
+                "No se pudo abrir el archivo. Usa las instrucciones manuales.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
     }
     
     private fun openCertificateFile(certFile: File) {
@@ -636,40 +609,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
     
-    private fun showManualInstructions(filePath: String) {
+    private fun showManualInstructions(fileName: String) {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("📱 Instalación Manual del Certificado")
             .setMessage("""
-                El certificado se guardó en:
-                $filePath
-                
+                Guarda/ubica el archivo:
+                $fileName
+
                 📋 PASOS PARA INSTALAR:
-                
+
                 1️⃣ Abre Ajustes de tu dispositivo
                 2️⃣ Ve a Seguridad y privacidad
                 3️⃣ Busca "Credenciales" o "Certificados"
-                4️⃣ Toca "Instalar desde almacenamiento"
-                5️⃣ Navega a Descargas
-                6️⃣ Selecciona "RoRoInterceptorCA.crt"
-                7️⃣ Elige "Aplicaciones" o "CA VPN" como tipo
-                8️⃣ Nombra el certificado (ej: "RoRo CA")
-                9️⃣ Confirma con tu PIN/huella
-                
+                4️⃣ Toca "Instalar" / "Instalar desde almacenamiento"
+                5️⃣ Abre la app Archivos y navega a la ubicación donde lo guardaste
+                6️⃣ Selecciona "$fileName" (recomendado: .crt o .cer)
+                7️⃣ Elige "CA" / "Certificado de CA" cuando lo pregunte
+                8️⃣ Confirma con tu PIN/huella
+
                 ⚠️ IMPORTANTE:
                 • Android requiere bloqueo de pantalla para instalar certificados
                 • Si pide contraseña, déjala vacía y presiona OK
                 • El certificado debe instalarse como "CA de usuario"
-                
+
                 ℹ️ Para Android 14+, algunos dispositivos requieren:
                 Ajustes > Seguridad > Más ajustes de seguridad > Cifrado y credenciales > Instalar un certificado
             """.trimIndent())
             .setPositiveButton("Entendido", null)
-            .setNeutralButton("Copiar Ruta") { _, _ ->
-                val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("Ruta del certificado", filePath)
-                clipboard.setPrimaryClip(clip)
-                android.widget.Toast.makeText(this, "Ruta copiada", android.widget.Toast.LENGTH_SHORT).show()
-            }
             .show()
     }
     

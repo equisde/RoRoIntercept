@@ -140,14 +140,19 @@ class WebServer(
     
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
-        
+
         return when {
-            uri == "/" || uri == "/index.html" -> serveIndexHtml()
+            uri == "/" || uri == "/index.html" -> serveWebUi()
             uri == "/api/proxy/status" -> handleProxyStatus()
             uri == "/api/proxy/start" && session.method == Method.POST -> handleProxyStart()
             uri == "/api/proxy/stop" && session.method == Method.POST -> handleProxyStop()
+            uri == "/api/requests" -> handleGetRequests()
             uri == "/api/logs" -> handleGetLogs()
-            uri == "/api/rules" -> handleGetRules()
+            uri == "/api/rules" && session.method == Method.GET -> handleGetRules()
+            uri == "/api/rules" && session.method == Method.POST -> handleAddRule(session)
+            uri.startsWith("/api/rules/") && session.method == Method.PUT -> handleUpdateRule(session)
+            uri.startsWith("/api/rules/") && session.method == Method.DELETE -> handleDeleteRule(session)
+            uri == "/api/clear" && session.method == Method.POST -> handleClear()
             uri.startsWith("/static/") -> serveStaticFile(uri)
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
         }
@@ -163,9 +168,10 @@ class WebServer(
             } else {
                 context.startService(intent)
             }
-            
+
             val response = JSONObject().apply {
                 put("success", true)
+                put("running", true)
                 put("message", "Proxy starting...")
             }
             newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
@@ -183,10 +189,15 @@ class WebServer(
             val intent = Intent(context, com.httpinterceptor.proxy.ProxyService::class.java).apply {
                 action = "STOP_PROXY"
             }
-            context.startService(intent)
-            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+
             val response = JSONObject().apply {
                 put("success", true)
+                put("running", false)
                 put("message", "Proxy stopping...")
             }
             newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
@@ -226,7 +237,106 @@ class WebServer(
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", "[]")
         }
     }
-    
+
+    private fun handleAddRule(session: IHTTPSession): Response {
+        return try {
+            val body = readJsonBody(session)
+            val rule = gson.fromJson(body, com.httpinterceptor.model.ProxyRule::class.java)
+            rulesManager.addRule(rule)
+            notifyProxyRulesChanged()
+            newFixedLengthResponse(Response.Status.OK, "application/json", "{\"success\":true}")
+        } catch (e: Exception) {
+            newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"success\":false}")
+        }
+    }
+
+    private fun handleUpdateRule(session: IHTTPSession): Response {
+        return try {
+            val ruleId = session.uri.substringAfterLast('/').toLong()
+            val body = readJsonBody(session)
+            val rule = gson.fromJson(body, com.httpinterceptor.model.ProxyRule::class.java)
+            rulesManager.updateRule(ruleId, rule.copy(id = ruleId))
+            notifyProxyRulesChanged()
+            newFixedLengthResponse(Response.Status.OK, "application/json", "{\"success\":true}")
+        } catch (e: Exception) {
+            newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"success\":false}")
+        }
+    }
+
+    private fun handleDeleteRule(session: IHTTPSession): Response {
+        return try {
+            val ruleId = session.uri.substringAfterLast('/').toLong()
+            rulesManager.deleteRule(ruleId)
+            notifyProxyRulesChanged()
+            newFixedLengthResponse(Response.Status.OK, "application/json", "{\"success\":true}")
+        } catch (e: Exception) {
+            newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"success\":false}")
+        }
+    }
+
+    private fun handleGetRequests(): Response {
+        val json = context.getSharedPreferences("proxy_sessions", Context.MODE_PRIVATE)
+            .getString("requests", "[]") ?: "[]"
+        return newFixedLengthResponse(Response.Status.OK, "application/json", json)
+    }
+
+    private fun handleClear(): Response {
+        // Clear in-memory list via service action and clear persisted snapshots/logs.
+        try {
+            val intent = Intent(context, com.httpinterceptor.proxy.ProxyService::class.java).apply {
+                action = "CLEAR_REQUESTS"
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (_: Exception) {
+        }
+
+        context.getSharedPreferences("proxy_sessions", Context.MODE_PRIVATE).edit()
+            .putString("requests", "[]")
+            .apply()
+        context.getSharedPreferences("proxy_logs", Context.MODE_PRIVATE).edit()
+            .putString("logs", "[]")
+            .apply()
+
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"success\":true}")
+    }
+
+    private fun notifyProxyRulesChanged() {
+        try {
+            val intent = Intent(context, com.httpinterceptor.proxy.ProxyService::class.java).apply {
+                action = "SYNC_RULES"
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun readJsonBody(session: IHTTPSession): String {
+        return try {
+            val files = HashMap<String, String>()
+            session.parseBody(files)
+            files["postData"].orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+    }
+
+    private fun serveWebUi(): Response {
+        return try {
+            val input = context.assets.open("web_ui.html")
+            newChunkedResponse(Response.Status.OK, "text/html", input)
+        } catch (_: Exception) {
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Web UI not found")
+        }
+    }
+
     private fun serveStaticFile(uri: String): Response {
         return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Static file not found")
     }

@@ -49,6 +49,9 @@ class ProxyService : Service() {
         certManager = CertificateManager(this)
         rulesManager = RulesManager(this)
         syncRulesToPrefs(rulesManager.getRules())
+
+        // Ensure Web UI is available even when the app UI isn't open
+        com.httpinterceptor.web.WebServerService.start(this)
         
         // Start foreground immediately to keep service alive
         startForeground(NOTIFICATION_ID, createNotification("Servicio iniciado"))
@@ -62,6 +65,8 @@ class ProxyService : Service() {
         when (intent?.action) {
             "START_PROXY" -> startProxy()
             "STOP_PROXY" -> stopProxy()
+            "SYNC_RULES" -> refreshProxyRules()
+            "CLEAR_REQUESTS" -> clearRequests()
         }
         
         // Always ensure we're running in foreground
@@ -89,6 +94,7 @@ class ProxyService : Service() {
                     }
                     listeners.forEach { it.onRequestReceived(request) }
                     appendLog("REQUEST ${request.method} ${request.url}", "REQUEST")
+                    syncRequestsToPrefs()
                 }
                 
                 override fun onRequestModified(request: HttpRequest) {
@@ -99,6 +105,7 @@ class ProxyService : Service() {
                         }
                     }
                     appendLog("MODIFIED ${request.method} ${request.url}", "INFO")
+                    syncRequestsToPrefs()
                 }
                 
                 override fun onResponseReceived(request: HttpRequest) {
@@ -118,6 +125,7 @@ class ProxyService : Service() {
                     request.response?.let {
                         appendLog("RESPONSE ${it.statusCode} ${request.url}", "RESPONSE")
                     }
+                    syncRequestsToPrefs()
                 }
                 
                 override fun onError(error: String) {
@@ -170,7 +178,7 @@ class ProxyService : Service() {
         
         // Don't stop Web UI, keep it running
         // Update notification to show proxy stopped
-        val notification = createNotification("Proxy detenido | Web UI: http://localhost:8080")
+        val notification = createNotification("Proxy detenido | Web UI puerto 8888")
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager?.notify(NOTIFICATION_ID, notification)
         
@@ -190,6 +198,7 @@ class ProxyService : Service() {
         synchronized(requests) {
             requests.clear()
         }
+        syncRequestsToPrefs()
     }
     
     fun addListener(listener: ProxyServiceListener) {
@@ -268,6 +277,8 @@ class ProxyService : Service() {
     }
     
     private fun refreshProxyRules() {
+        // Rules might be edited from the Web UI service; ensure we reload from disk.
+        rulesManager.reload()
         val rules = rulesManager.getRules()
         proxyServer?.updateRules(rules)
         syncRulesToPrefs(rules)
@@ -283,6 +294,75 @@ class ProxyService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to sync rules to prefs", e)
         }
+    }
+
+    private data class WebUiResponse(
+        val statusCode: Int,
+        val statusMessage: String,
+        val headers: Map<String, String>,
+        val body: String?
+    )
+
+    private data class WebUiRequest(
+        val id: Long,
+        val timestamp: Long,
+        val method: String,
+        val url: String,
+        val host: String,
+        val path: String,
+        val headers: Map<String, String>,
+        val body: String?,
+        val modified: Boolean,
+        val blocked: Boolean,
+        val response: WebUiResponse?
+    )
+
+    private fun syncRequestsToPrefs() {
+        try {
+            val snapshot = synchronized(requests) { requests.take(200) }
+            val webUi = snapshot.map { req ->
+                val resp = req.response
+                val respBody = resp?.body?.toUtf8Preview()
+                val blocked = (resp?.statusCode == 403) && (respBody?.contains("Blocked by rule", ignoreCase = true) == true)
+
+                WebUiRequest(
+                    id = req.id,
+                    timestamp = req.timestamp,
+                    method = req.method,
+                    url = req.url,
+                    host = req.host,
+                    path = req.path,
+                    headers = req.headers,
+                    body = req.body?.toUtf8Preview(),
+                    modified = req.modified,
+                    blocked = blocked,
+                    response = resp?.let {
+                        WebUiResponse(
+                            statusCode = it.statusCode,
+                            statusMessage = it.statusMessage,
+                            headers = it.headers,
+                            body = respBody
+                        )
+                    }
+                )
+            }
+
+            val json = gson.toJson(webUi)
+            getSharedPreferences("proxy_sessions", MODE_PRIVATE).edit()
+                .putString("requests", json)
+                .apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync requests to prefs", e)
+        }
+    }
+
+    private fun ByteArray.toUtf8Preview(maxChars: Int = 20000): String {
+        val s = try {
+            String(this, Charsets.UTF_8)
+        } catch (_: Exception) {
+            ""
+        }
+        return if (s.length > maxChars) s.substring(0, maxChars) + "\n... (truncated)" else s
     }
     
     private fun appendLog(message: String, level: String = "INFO") {
