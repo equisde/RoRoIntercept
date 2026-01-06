@@ -194,27 +194,99 @@ class MitmProxyServer(
             response.headers().set(HttpHeaderNames.CONNECTION, "keep-alive")
 
             ctx.writeAndFlush(response).addListener(ChannelFutureListener { future ->
-                if (future.isSuccess) {
+                if (!future.isSuccess) {
+                    ctx.close()
+                    return@ChannelFutureListener
+                }
+
+                // Fiddler-like behavior: if the CA isn't trusted, don't MITM (avoid breaking HTTPS).
+                if (!certificateManager.isCertificateInstalled()) {
+                    listener.onLog("[$requestId] CA not installed -> tunneling CONNECT without MITM", "WARN")
+
+                    // Remove HTTP handlers so raw TLS bytes can flow.
                     try {
-                        val (cert, privateKey) = certificateManager.generateServerCertificate(targetHost!!)
-                        val sslContext = SslContextBuilder
-                            .forServer(privateKey, cert, certificateManager.getCACertificate())
-                            .build()
-                        
                         ctx.pipeline().remove("http-codec")
                         ctx.pipeline().remove("http-aggregator")
-                        ctx.pipeline().addFirst("ssl", sslContext.newHandler(ctx.alloc()))
-                        ctx.pipeline().addLast("http-codec-2", HttpServerCodec())
-                        ctx.pipeline().addLast("http-aggregator-2", HttpObjectAggregator(50 * 1024 * 1024))
-                        
-                        listener.onLog("[$requestId] SSL tunnel ready for $targetHost", "SUCCESS")
-                        ctx.read()
-                        
-                    } catch (e: Exception) {
-                        listener.onLog("[$requestId] SSL setup failed: ${e.message}", "ERROR")
-                        ctx.close()
+                    } catch (_: Exception) {
                     }
-                } else {
+
+                    val inbound = ctx.channel()
+                    val b = Bootstrap()
+                    b.group(inbound.eventLoop())
+                        .channel(NioSocketChannel::class.java)
+                        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 10000)
+                        .option(ChannelOption.AUTO_READ, true)
+                        .handler(object : ChannelInitializer<SocketChannel>() {
+                            override fun initChannel(ch: SocketChannel) {
+                                ch.pipeline().addLast(object : ChannelInboundHandlerAdapter() {
+                                    override fun channelRead(ctxOut: ChannelHandlerContext, msg: Any) {
+                                        inbound.writeAndFlush(ReferenceCountUtil.retain(msg))
+                                    }
+
+                                    override fun channelInactive(ctxOut: ChannelHandlerContext) {
+                                        inbound.close()
+                                    }
+
+                                    override fun exceptionCaught(ctxOut: ChannelHandlerContext, cause: Throwable) {
+                                        inbound.close()
+                                    }
+                                })
+                            }
+                        })
+
+                    b.connect(targetHost, targetPort).addListener(ChannelFutureListener { cf ->
+                        if (!cf.isSuccess) {
+                            inbound.close()
+                            return@ChannelFutureListener
+                        }
+
+                        outboundChannel = cf.channel()
+
+                        // Replace this handler with a raw forwarder.
+                        try {
+                            ctx.pipeline().remove(this)
+                        } catch (_: Exception) {
+                        }
+
+                        ctx.pipeline().addLast(object : ChannelInboundHandlerAdapter() {
+                            override fun channelRead(ctxIn: ChannelHandlerContext, msg: Any) {
+                                outboundChannel?.writeAndFlush(ReferenceCountUtil.retain(msg))
+                            }
+
+                            override fun channelInactive(ctxIn: ChannelHandlerContext) {
+                                outboundChannel?.close()
+                            }
+
+                            override fun exceptionCaught(ctxIn: ChannelHandlerContext, cause: Throwable) {
+                                outboundChannel?.close()
+                            }
+                        })
+
+                        listener.onLog("[$requestId] CONNECT tunnel established to $targetHost:$targetPort", "SUCCESS")
+                        ctx.read()
+                    })
+
+                    return@ChannelFutureListener
+                }
+
+                // CA trusted -> do MITM.
+                try {
+                    val (cert, privateKey) = certificateManager.generateServerCertificate(targetHost!!)
+                    val sslContext = SslContextBuilder
+                        .forServer(privateKey, cert, certificateManager.getCACertificate())
+                        .build()
+
+                    ctx.pipeline().remove("http-codec")
+                    ctx.pipeline().remove("http-aggregator")
+                    ctx.pipeline().addFirst("ssl", sslContext.newHandler(ctx.alloc()))
+                    ctx.pipeline().addLast("http-codec-2", HttpServerCodec())
+                    ctx.pipeline().addLast("http-aggregator-2", HttpObjectAggregator(50 * 1024 * 1024))
+
+                    listener.onLog("[$requestId] SSL tunnel ready for $targetHost", "SUCCESS")
+                    ctx.read()
+
+                } catch (e: Exception) {
+                    listener.onLog("[$requestId] SSL setup failed: ${e.message}", "ERROR")
                     ctx.close()
                 }
             })
