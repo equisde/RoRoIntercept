@@ -12,17 +12,24 @@
             --danger: #ef4444;
             --warning: #f59e0b;
             --info: #3b82f6;
-            --dark: #1f2937;
-            --light-bg: #f9fafb;
-            --border: #e5e7eb;
+
+            --bg: #0b1220;
+            --panel: #121a2a;
+            --panel-2: #162033;
+            --panel-hover: #1b2942;
+            --text: #e5e7eb;
+            --text-muted: #9ca3af;
+            --border: rgba(255,255,255,0.10);
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #333;
+            background: radial-gradient(1200px 600px at 20% 0%, rgba(102,126,234,0.25), transparent 60%),
+                        radial-gradient(1000px 600px at 80% 10%, rgba(118,75,162,0.20), transparent 55%),
+                        var(--bg);
+            color: var(--text);
             min-height: 100vh;
             overflow-x: hidden;
         }
@@ -35,11 +42,12 @@
         
         /* Header */
         header {
-            background: white;
+            background: var(--panel);
             border-radius: 16px;
             padding: 24px;
             margin-bottom: 24px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+            border: 1px solid var(--border);
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -178,10 +186,11 @@
         }
         
         .stat-card {
-            background: white;
+            background: var(--panel);
+            border: 1px solid var(--border);
             border-radius: 12px;
             padding: 20px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.35);
             transition: transform 0.2s;
         }
         
@@ -197,27 +206,29 @@
         }
         
         .stat-label {
-            color: #6b7280;
+            color: var(--text-muted);
             font-size: 14px;
             font-weight: 500;
         }
         
         /* Tabs */
         .tabs {
-            background: white;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-bottom: none;
             border-radius: 12px 12px 0 0;
             display: flex;
             gap: 4px;
             padding: 8px;
             margin-bottom: 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
         }
         
         .tab {
             padding: 12px 24px;
-            border: none;
+            border: 1px solid transparent;
             background: transparent;
-            color: #6b7280;
+            color: var(--text-muted);
             font-weight: 600;
             cursor: pointer;
             border-radius: 8px;
@@ -225,7 +236,9 @@
         }
         
         .tab:hover {
-            background: var(--light-bg);
+            background: var(--panel-hover);
+            border-color: var(--border);
+            color: var(--text);
         }
         
         .tab.active {
@@ -234,10 +247,11 @@
         }
         
         .tab-content {
-            background: white;
+            background: var(--panel);
+            border: 1px solid var(--border);
             border-radius: 0 0 12px 12px;
             padding: 24px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.35);
             display: none;
         }
         
@@ -254,7 +268,8 @@
         .request-item {
             padding: 16px;
             margin-bottom: 12px;
-            background: var(--light-bg);
+            background: var(--panel-2);
+            border: 1px solid var(--border);
             border-radius: 10px;
             border-left: 4px solid var(--primary);
             cursor: pointer;
@@ -262,9 +277,9 @@
         }
         
         .request-item:hover {
-            background: #f3f4f6;
+            background: var(--panel-hover);
             transform: translateX(4px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.45);
         }
         
         .method {
@@ -299,7 +314,7 @@
         
         .url {
             display: block;
-            color: #374151;
+            color: var(--text);
             font-size: 14px;
             margin: 8px 0;
             font-family: 'Courier New', monospace;
@@ -351,7 +366,8 @@
         .rule-item {
             padding: 16px;
             margin-bottom: 12px;
-            background: var(--light-bg);
+            background: var(--panel-2);
+            border: 1px solid var(--border);
             border-radius: 10px;
             display: flex;
             justify-content: space-between;
@@ -369,7 +385,7 @@
         }
         
         .rule-item:hover {
-            background: #f3f4f6;
+            background: var(--panel-hover);
         }
         
         /* Modal */
@@ -392,14 +408,16 @@
         }
         
         .modal-content {
-            background: white;
+            background: var(--panel);
+            color: var(--text);
             padding: 32px;
             border-radius: 16px;
             max-width: 700px;
             width: 90%;
             max-height: 90vh;
             overflow-y: auto;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
             animation: modalSlide 0.3s ease-out;
         }
         
@@ -434,18 +452,20 @@
             display: block;
             margin-bottom: 8px;
             font-weight: 600;
-            color: #374151;
+            color: var(--text);
             font-size: 14px;
         }
         
         input, select, textarea {
             width: 100%;
             padding: 12px 16px;
-            border: 2px solid var(--border);
+            border: 1px solid var(--border);
             border-radius: 8px;
             font-size: 14px;
             font-family: inherit;
             transition: border 0.2s;
+            background: var(--panel-2);
+            color: var(--text);
         }
         
         input:focus, select:focus, textarea:focus {
@@ -496,7 +516,7 @@
         }
         
         ::-webkit-scrollbar-track {
-            background: #f1f5f9;
+            background: var(--bg);
             border-radius: 10px;
         }
         
