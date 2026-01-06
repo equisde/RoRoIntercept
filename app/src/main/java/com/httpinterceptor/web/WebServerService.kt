@@ -26,9 +26,15 @@ class WebServerService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 2
         private const val CHANNEL_ID = "web_server_channel"
+        private const val PREFS = "web_ui_prefs"
+        private const val KEY_SHOULD_RUN = "web_ui_should_run"
         const val WEB_PORT = 8888
-        
+
         fun start(context: Context) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_SHOULD_RUN, true)
+                .apply()
+
             val intent = Intent(context, WebServerService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -36,8 +42,11 @@ class WebServerService : Service() {
                 context.startService(intent)
             }
         }
-        
+
         fun stop(context: Context) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putBoolean(KEY_SHOULD_RUN, false)
+                .apply()
             context.stopService(Intent(context, WebServerService::class.java))
         }
     }
@@ -47,12 +56,19 @@ class WebServerService : Service() {
         createNotificationChannel()
         rulesManager = RulesManager(this)
         acquireWakeLock()
-        startForeground(NOTIFICATION_ID, createNotification("Web UI iniciando"))
+        try {
+            startForeground(NOTIFICATION_ID, createNotification("Web UI iniciando"))
+        } catch (_: Exception) {
+            // If notifications are blocked, avoid crashing; the OS may still stop the service.
+        }
         startWebServer()
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForeground(NOTIFICATION_ID, createNotification())
+        try {
+            startForeground(NOTIFICATION_ID, createNotification())
+        } catch (_: Exception) {
+        }
         return START_STICKY
     }
     
@@ -63,6 +79,30 @@ class WebServerService : Service() {
         stopWebServer()
         releaseWakeLock()
         serviceScope.cancel()
+        scheduleRestartIfNeeded("onDestroy")
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        scheduleRestartIfNeeded("onTaskRemoved")
+    }
+
+    private fun scheduleRestartIfNeeded(reason: String) {
+        val shouldRun = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_SHOULD_RUN, true)
+        if (!shouldRun) return
+
+        try {
+            val alarm = getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, WebServerService::class.java)
+            val pi = PendingIntent.getService(
+                this,
+                2001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 2000L, pi)
+        } catch (_: Exception) {
+        }
     }
     
     private fun acquireWakeLock() {
@@ -126,8 +166,11 @@ class WebServerService : Service() {
     }
     
     private fun updateNotification(message: String) {
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.notify(NOTIFICATION_ID, createNotification(message))
+        try {
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.notify(NOTIFICATION_ID, createNotification(message))
+        } catch (_: Exception) {
+        }
     }
 }
 

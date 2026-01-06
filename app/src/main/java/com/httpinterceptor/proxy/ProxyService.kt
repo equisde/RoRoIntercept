@@ -283,6 +283,31 @@ class ProxyService : Service() {
         stopProxy()
         releaseWakeLock()
         super.onDestroy()
+        scheduleRestartIfNeeded("onDestroy")
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        scheduleRestartIfNeeded("onTaskRemoved")
+    }
+
+    private fun scheduleRestartIfNeeded(reason: String) {
+        val prefs = getSharedPreferences("proxy_prefs", MODE_PRIVATE)
+        val shouldRun = prefs.getBoolean("proxy_running", false)
+        if (!shouldRun) return
+
+        try {
+            val alarm = getSystemService(ALARM_SERVICE) as AlarmManager
+            val intent = Intent(this, ProxyService::class.java).apply { action = "START_PROXY" }
+            val pi = PendingIntent.getService(
+                this,
+                1001,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 2000L, pi)
+        } catch (_: Exception) {
+        }
     }
     
     private fun refreshProxyRules() {
