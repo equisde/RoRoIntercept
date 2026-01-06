@@ -272,8 +272,10 @@ class MitmProxyServer(
                 // CA trusted -> do MITM.
                 try {
                     val (cert, privateKey) = certificateManager.generateServerCertificate(targetHost!!)
+                    // Do not send the root CA in the presented chain; clients should build it from the installed trust anchor.
                     val sslContext = SslContextBuilder
-                        .forServer(privateKey, cert, certificateManager.getCACertificate())
+                        .forServer(privateKey, cert)
+                        .protocols("TLSv1.2", "TLSv1.3")
                         .build()
 
                     ctx.pipeline().remove("http-codec")
