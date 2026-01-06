@@ -223,7 +223,7 @@ class CertificateManager(private val context: Context) {
 
         // Add Authority Key Identifier
         val authorityKeyIdentifier = org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils()
-            .createAuthorityKeyIdentifier(caCert.publicKey)
+            .createAuthorityKeyIdentifier(caCert)
         certBuilder.addExtension(
             Extension.authorityKeyIdentifier,
             false,
