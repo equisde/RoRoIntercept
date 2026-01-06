@@ -144,7 +144,7 @@ class RulesActivity : AppCompatActivity() {
                 val headerValue = inputHeaderValue.text?.toString()?.trim().orEmpty()
                 val replaceBody = inputBodyReplace.text?.toString()?.trim().orEmpty()
                 
-                val modifyAction = if (action == RuleAction.MODIFY) {
+                val modifyAction = if (action == RuleAction.MODIFY || action == RuleAction.REPLACE) {
                     ModifyAction(
                         modifyHeaders = if (headerKey.isNotBlank()) mapOf(headerKey to headerValue) else null,
                         replaceBody = replaceBody.ifBlank { null }

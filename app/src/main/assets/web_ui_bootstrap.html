@@ -128,6 +128,7 @@
                 <label class="form-label">Acción</label>
                 <select class="form-select roro-surface-2" id="ruleAction" onchange="toggleModifySection()">
                   <option value="MODIFY">Modificar</option>
+                  <option value="REPLACE">Reemplazar</option>
                   <option value="BLOCK">Bloquear</option>
                   <option value="ALLOW">Permitir</option>
                 </select>
@@ -153,8 +154,8 @@
             <div id="modifySection" class="mt-3">
               <div id="headersSection">
                 <div class="mb-3"><label class="form-label">Headers a modificar (JSON)</label><textarea class="form-control roro-surface-2" id="ruleHeaders" rows="4"></textarea></div>
-                <div class="mb-3"><label class="form-label">Headers a remover (coma)</label><input class="form-control roro-surface-2" id="removeHeaders" type="text"></div>
-                <div class="mb-3">
+                <div class="mb-3"><label class="form-label">Headers a remover (coma)</label><textarea class="form-control roro-surface-2" id="removeHeaders" rows="2"></textarea></div>
+                <div class="mb-3" id="headersSearchReplaceWrap">
                   <label class="form-label">Buscar y reemplazar en Headers</label>
                   <div class="row g-2">
                     <div class="col-12 col-md-3">
@@ -164,10 +165,10 @@
                       </select>
                     </div>
                     <div class="col-12 col-md-4">
-                      <input class="form-control form-control-sm roro-surface-2" id="srhSearch" type="text" placeholder="String a buscar">
+                      <textarea class="form-control form-control-sm roro-surface-2" id="srhSearch" rows="2" placeholder="String a buscar"></textarea>
                     </div>
                     <div class="col-12 col-md-5">
-                      <input class="form-control form-control-sm roro-surface-2" id="srhReplace" type="text" placeholder="String a reemplazar">
+                      <textarea class="form-control form-control-sm roro-surface-2" id="srhReplace" rows="2" placeholder="String a reemplazar"></textarea>
                     </div>
                   </div>
                   <small class="small-muted d-block mt-2">Se aplica a todos los valores de headers.</small>
@@ -175,8 +176,8 @@
               </div>
 
               <div id="bodySection">
-                <div class="mb-3"><label class="form-label">Body reemplazo</label><textarea class="form-control roro-surface-2" id="ruleBody" rows="4"></textarea></div>
-                <div class="mb-3">
+                <div class="mb-3" id="replaceBodyWrap"><label class="form-label">Body reemplazo</label><textarea class="form-control roro-surface-2" id="ruleReplaceBody" rows="6"></textarea></div>
+                <div class="mb-3" id="bodySearchReplaceWrap">
                   <label class="form-label">Buscar y reemplazar en Body</label>
                   <div class="row g-2">
                     <div class="col-12 col-md-3">
@@ -186,10 +187,10 @@
                       </select>
                     </div>
                     <div class="col-12 col-md-4">
-                      <input class="form-control form-control-sm roro-surface-2" id="srbSearch" type="text" placeholder="String a buscar">
+                      <textarea class="form-control form-control-sm roro-surface-2" id="srbSearch" rows="2" placeholder="String a buscar"></textarea>
                     </div>
                     <div class="col-12 col-md-5">
-                      <input class="form-control form-control-sm roro-surface-2" id="srbReplace" type="text" placeholder="String a reemplazar">
+                      <textarea class="form-control form-control-sm roro-surface-2" id="srbReplace" rows="2" placeholder="String a reemplazar"></textarea>
                     </div>
                   </div>
                 </div>
@@ -446,13 +447,26 @@
 
     function toggleModifyParts() {
       const part = document.getElementById('ruleModifyPart')?.value || 'BOTH';
-      document.getElementById('headersSection').style.display = (part === 'HEADERS' || part === 'BOTH') ? 'block' : 'none';
-      document.getElementById('bodySection').style.display = (part === 'BODY' || part === 'BOTH') ? 'block' : 'none';
+      const action = document.getElementById('ruleAction')?.value || 'MODIFY';
+      const showHeaders = (part === 'HEADERS' || part === 'BOTH');
+      const showBody = (part === 'BODY' || part === 'BOTH');
+
+      document.getElementById('headersSection').style.display = showHeaders ? 'block' : 'none';
+      document.getElementById('bodySection').style.display = showBody ? 'block' : 'none';
+
+      const hsr = document.getElementById('headersSearchReplaceWrap');
+      if (hsr) hsr.style.display = (showHeaders && action === 'MODIFY') ? 'block' : 'none';
+
+      const rbw = document.getElementById('replaceBodyWrap');
+      if (rbw) rbw.style.display = (showBody && action === 'REPLACE') ? 'block' : 'none';
+
+      const bsr = document.getElementById('bodySearchReplaceWrap');
+      if (bsr) bsr.style.display = (showBody && action === 'MODIFY') ? 'block' : 'none';
     }
 
     function toggleModifySection() {
       const action = document.getElementById('ruleAction').value;
-      const show = action === 'MODIFY';
+      const show = (action === 'MODIFY' || action === 'REPLACE');
       document.getElementById('modifySection').style.display = show ? 'block' : 'none';
       document.getElementById('applyToWrap').style.display = show ? 'block' : 'none';
       document.getElementById('modifyPartWrap').style.display = show ? 'block' : 'none';
@@ -496,7 +510,7 @@
       const srhSearch = (document.getElementById('srhSearch')?.value || '').trim();
       const srhReplace = document.getElementById('srhReplace')?.value ?? '';
 
-      const body = document.getElementById('ruleBody').value;
+      const replaceBody = document.getElementById('ruleReplaceBody')?.value || '';
 
       const srbMode = document.getElementById('srbMode')?.value || 'TEXT';
       const srbSearch = (document.getElementById('srbSearch')?.value || '').trim();
@@ -510,8 +524,8 @@
       if (srhSearch) { headerMods.searchReplaceHeaders = [{ search: srhSearch, replace: String(srhReplace), useRegex: srhMode === 'REGEX' }]; }
 
       const bodyMods = {};
-      if (body) { bodyMods.replaceBody = body; }
-      if (srbSearch) { bodyMods.searchReplaceBody = [{ search: srbSearch, replace: String(srbReplace), useRegex: srbMode === 'REGEX' }]; }
+      if (action === 'REPLACE' && replaceBody) { bodyMods.replaceBody = replaceBody; }
+      if (action === 'MODIFY' && srbSearch) { bodyMods.searchReplaceBody = [{ search: srbSearch, replace: String(srbReplace), useRegex: srbMode === 'REGEX' }]; }
 
       const merged = {};
       if (part === 'HEADERS' || part === 'BOTH') Object.assign(merged, headerMods);
@@ -528,8 +542,8 @@
         urlPattern: legacyUrlPattern,
         matchType: legacyMatchType,
         action,
-        modifyRequest: (action === 'MODIFY' && (applyTo === 'REQUEST' || applyTo === 'BOTH')) ? modsObj : null,
-        modifyResponse: (action === 'MODIFY' && (applyTo === 'RESPONSE' || applyTo === 'BOTH')) ? modsObj : null
+        modifyRequest: ((action === 'MODIFY' || action === 'REPLACE') && (applyTo === 'REQUEST' || applyTo === 'BOTH')) ? modsObj : null,
+        modifyResponse: ((action === 'MODIFY' || action === 'REPLACE') && (applyTo === 'RESPONSE' || applyTo === 'BOTH')) ? modsObj : null
       };
 
       await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule) });

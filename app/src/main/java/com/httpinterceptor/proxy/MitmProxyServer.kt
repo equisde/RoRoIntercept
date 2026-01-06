@@ -375,7 +375,7 @@ class MitmProxyServer(
                 if (rule.conditions.isNullOrEmpty() && rule.methods?.isNotEmpty() == true && !rule.methods.any { it.equals(request.method, ignoreCase = true) }) continue
                 
                 when (rule.action) {
-                    RuleAction.MODIFY -> {
+                    RuleAction.MODIFY, RuleAction.REPLACE -> {
                         rule.modifyRequest?.let { mods ->
                             val newHeaders = modified.headers.toMutableMap()
                             
@@ -789,7 +789,7 @@ class MitmProxyServer(
                         blocked
                     )
                 }
-                RuleAction.MODIFY -> {
+                RuleAction.MODIFY, RuleAction.REPLACE -> {
                     val mods = rule.modifyResponse ?: continue
                     
                     mods.modifyHeaders?.forEach { (key, value) ->

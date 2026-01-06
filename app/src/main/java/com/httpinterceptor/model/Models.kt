@@ -93,7 +93,7 @@ data class RuleCondition(
 )
 
 enum class RuleAction {
-    ALLOW, BLOCK, MODIFY, REDIRECT, MOCK_RESPONSE, DELAY
+    ALLOW, BLOCK, MODIFY, REPLACE, REDIRECT, MOCK_RESPONSE, DELAY
 }
 
 data class ModifyAction(
