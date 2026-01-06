@@ -337,18 +337,30 @@ class CertificateManager(private val context: Context) {
                 javax.net.ssl.TrustManagerFactory.getDefaultAlgorithm()
             )
             trustManager.init(null as KeyStore?)
-            
+
             val x509TrustManager = trustManager.trustManagers
                 .filterIsInstance<javax.net.ssl.X509TrustManager>()
                 .firstOrNull()
-            
+
             if (x509TrustManager != null) {
+                val myFp = try {
+                    val md = java.security.MessageDigest.getInstance("SHA-256")
+                    md.digest(caCert.encoded)
+                } catch (_: Exception) {
+                    ByteArray(0)
+                }
+
                 val acceptedIssuers = x509TrustManager.acceptedIssuers
                 val isInstalled = acceptedIssuers.any { cert ->
-                    cert.subjectDN.name.contains("RoRo Interceptor Root CA") ||
-                    cert.issuerDN.name.contains("RoRo Interceptor Root CA")
+                    try {
+                        val md = java.security.MessageDigest.getInstance("SHA-256")
+                        md.digest(cert.encoded).contentEquals(myFp)
+                    } catch (_: Exception) {
+                        false
+                    }
                 }
-                Log.d(TAG, "Certificate installed: $isInstalled")
+
+                Log.d(TAG, "Certificate installed (fingerprint match): $isInstalled")
                 isInstalled
             } else {
                 Log.w(TAG, "No X509TrustManager found")
