@@ -24,22 +24,35 @@ import java.util.*
 import android.util.Base64
 
 class CertificateManager(private val context: Context) {
-    
+
     private val keyStore: KeyStore
     private val caCert: X509Certificate
     private val caPrivateKey: PrivateKey
-    
+    private val secureRandom = SecureRandom()
+
+    private val serverCertCache = object : LinkedHashMap<String, Pair<X509Certificate, PrivateKey>>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<X509Certificate, PrivateKey>>): Boolean {
+            return size > 200
+        }
+    }
+
+    private fun newSerialNumber(): BigInteger {
+        val bytes = ByteArray(16)
+        secureRandom.nextBytes(bytes)
+        return BigInteger(1, bytes)
+    }
+
     init {
         // Remove and re-add BC provider to ensure it's properly initialized
         Security.removeProvider("BC")
         Security.insertProviderAt(BouncyCastleProvider(), 1)
-        
+
         val certDir = File(context.filesDir, "certs")
         if (!certDir.exists()) certDir.mkdirs()
-        
+
         val keyStoreFile = File(certDir, "proxy.keystore")
         keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
-        
+
         if (keyStoreFile.exists()) {
             keyStoreFile.inputStream().use { fis ->
                 keyStore.load(fis, KEYSTORE_PASSWORD.toCharArray())
@@ -51,122 +64,125 @@ class CertificateManager(private val context: Context) {
             val (cert, key) = generateCACertificate()
             caCert = cert
             caPrivateKey = key
-            
+
             keyStore.setKeyEntry(
                 CA_ALIAS,
                 caPrivateKey,
                 KEYSTORE_PASSWORD.toCharArray(),
                 arrayOf(caCert)
             )
-            
+
             FileOutputStream(keyStoreFile).use { fos ->
                 keyStore.store(fos, KEYSTORE_PASSWORD.toCharArray())
             }
         }
-        
+
         Log.d(TAG, "Certificate Manager initialized")
     }
-    
+
     private fun generateCACertificate(): Pair<X509Certificate, PrivateKey> {
         val keyPairGenerator = KeyPairGenerator.getInstance("RSA")
-        keyPairGenerator.initialize(2048, SecureRandom())
+        keyPairGenerator.initialize(2048, secureRandom)
         val keyPair = keyPairGenerator.generateKeyPair()
-        
+
         val now = Date()
         val notBefore = Date(now.time - 86400000L) // 1 day before
         val notAfter = Date(now.time + 365L * 24 * 60 * 60 * 1000 * 10) // 10 years
-        
+
         // Use simple common name, similar to Fiddler
         val issuer = X500Name("CN=RoRo Interceptor Root CA, O=RoRo Devs, OU=Development")
         val subject = issuer
-        
+
         val certBuilder = JcaX509v3CertificateBuilder(
             issuer,
-            BigInteger.valueOf(System.currentTimeMillis()),
+            newSerialNumber(),
             notBefore,
             notAfter,
             subject,
             keyPair.public
         )
-        
+
         // Add basic constraints to mark this as a CA certificate
         certBuilder.addExtension(
             Extension.basicConstraints,
             true,
             org.bouncycastle.asn1.x509.BasicConstraints(true)
         )
-        
+
         // Add key usage extensions (critical for CA)
         certBuilder.addExtension(
             Extension.keyUsage,
             true,
             org.bouncycastle.asn1.x509.KeyUsage(
                 org.bouncycastle.asn1.x509.KeyUsage.keyCertSign or
-                org.bouncycastle.asn1.x509.KeyUsage.cRLSign
+                    org.bouncycastle.asn1.x509.KeyUsage.cRLSign
             )
         )
-        
+
         val signer = JcaContentSignerBuilder("SHA256withRSA")
             .setProvider("BC")
             .build(keyPair.private)
-        
+
         val certHolder = certBuilder.build(signer)
         val cert = JcaX509CertificateConverter()
             .setProvider("BC")
             .getCertificate(certHolder)
-        
+
         return Pair(cert, keyPair.private)
     }
-    
+
     fun generateServerCertificate(hostname: String, originalCert: X509Certificate? = null): Pair<X509Certificate, PrivateKey> {
+        synchronized(serverCertCache) {
+            serverCertCache[hostname]?.let { return it }
+        }
+
         Log.d(TAG, "🔐 Generating certificate for: $hostname")
-        
+
         val keyPairGenerator = KeyPairGenerator.getInstance("RSA", "BC")
-        keyPairGenerator.initialize(2048, SecureRandom())
+        keyPairGenerator.initialize(2048, secureRandom)
         val keyPair = keyPairGenerator.generateKeyPair()
-        
+
         val now = Date()
         val notBefore = Date(now.time - 86400000L)
         val notAfter = Date(now.time + 365L * 24 * 60 * 60 * 1000) // 1 year
-        
+
         val issuer = X500Name(caCert.subjectX500Principal.name)
-        
+
         // Use hostname in CN (Critical for certificate validation)
         val subject = X500Name("CN=$hostname")
-        
+
         val certBuilder = JcaX509v3CertificateBuilder(
             issuer,
-            BigInteger.valueOf(System.currentTimeMillis() + SecureRandom().nextInt(100000)),
+            newSerialNumber(),
             notBefore,
             notAfter,
             subject,
             keyPair.public
         )
-        
+
         // Add SAN (Subject Alternative Name) - CRITICAL for modern browsers
         val sanList = mutableListOf<GeneralName>()
-        
+
         // Always add the primary hostname
         sanList.add(GeneralName(GeneralName.dNSName, hostname))
-        
-        // Add wildcard for subdomains
+
+        // Add wildcard for subdomains (www.example.com -> *.example.com; api.bbc.co.uk -> *.bbc.co.uk)
         if (hostname.contains(".")) {
             val parts = hostname.split(".")
-            if (parts.size >= 2) {
-                // For www.example.com -> add *.example.com
-                val wildcard = "*." + parts.takeLast(2).joinToString(".")
+            if (parts.size >= 3) {
+                val wildcard = "*." + parts.drop(1).joinToString(".")
                 sanList.add(GeneralName(GeneralName.dNSName, wildcard))
             }
         }
-        
+
         // Add IP address if hostname is an IP
         if (hostname.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
             sanList.add(GeneralName(GeneralName.iPAddress, hostname))
         }
-        
+
         val san = GeneralNames(sanList.toTypedArray())
         certBuilder.addExtension(Extension.subjectAlternativeName, false, san)
-        
+
         // Add Extended Key Usage for TLS server authentication
         certBuilder.addExtension(
             Extension.extendedKeyUsage,
@@ -175,7 +191,7 @@ class CertificateManager(private val context: Context) {
                 org.bouncycastle.asn1.x509.KeyPurposeId.id_kp_serverAuth
             )
         )
-        
+
         // Add Authority Key Identifier
         val authorityKeyIdentifier = org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils()
             .createAuthorityKeyIdentifier(caCert.publicKey)
@@ -184,7 +200,7 @@ class CertificateManager(private val context: Context) {
             false,
             authorityKeyIdentifier
         )
-        
+
         // Add Subject Key Identifier
         val subjectKeyIdentifier = org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils()
             .createSubjectKeyIdentifier(keyPair.public)
@@ -193,38 +209,42 @@ class CertificateManager(private val context: Context) {
             false,
             subjectKeyIdentifier
         )
-        
+
         // Add Key Usage
         certBuilder.addExtension(
             Extension.keyUsage,
             true,
             org.bouncycastle.asn1.x509.KeyUsage(
                 org.bouncycastle.asn1.x509.KeyUsage.digitalSignature or
-                org.bouncycastle.asn1.x509.KeyUsage.keyEncipherment
+                    org.bouncycastle.asn1.x509.KeyUsage.keyEncipherment
             )
         )
-        
+
         val signer = JcaContentSignerBuilder("SHA256withRSA")
             .setProvider("BC")
             .build(caPrivateKey)
-        
+
         val certHolder = certBuilder.build(signer)
         val cert = JcaX509CertificateConverter()
             .setProvider("BC")
             .getCertificate(certHolder)
-        
+
         Log.d(TAG, "✅ Generated certificate for $hostname")
         Log.d(TAG, "   Subject: ${cert.subjectDN}")
         Log.d(TAG, "   Issuer: ${cert.issuerDN}")
-        Log.d(TAG, "   SAN: ${sanList.joinToString { 
-            when(it.tagNo) {
+        Log.d(TAG, "   SAN: ${sanList.joinToString {
+            when (it.tagNo) {
                 GeneralName.dNSName -> "DNS:${it.name}"
                 GeneralName.iPAddress -> "IP:${it.name}"
                 else -> it.name.toString()
             }
         }}")
-        
-        return Pair(cert, keyPair.private)
+
+        val pair = Pair(cert, keyPair.private)
+        synchronized(serverCertCache) {
+            serverCertCache[hostname] = pair
+        }
+        return pair
     }
     
     fun exportCACertificate(): File {

@@ -14,6 +14,7 @@ import fi.iki.elonen.NanoHTTPD
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
 import java.io.IOException
 
 class WebServerService : Service() {
@@ -135,9 +136,10 @@ class WebServer(
     private val context: Context,
     private val rulesManager: RulesManager,
 ) : NanoHTTPD(port) {
-    
+
     private val gson = Gson()
-    
+    private val certManager by lazy { com.httpinterceptor.utils.CertificateManager(context) }
+
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri
 
@@ -153,6 +155,8 @@ class WebServer(
             uri.startsWith("/api/rules/") && session.method == Method.PUT -> handleUpdateRule(session)
             uri.startsWith("/api/rules/") && session.method == Method.DELETE -> handleDeleteRule(session)
             uri == "/api/clear" && session.method == Method.POST -> handleClear()
+            uri == "/api/cert/status" -> handleCertStatus()
+            uri.startsWith("/api/cert/") -> handleCertDownload(uri)
             uri.startsWith("/static/") -> serveStaticFile(uri)
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
         }
@@ -280,6 +284,36 @@ class WebServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", json)
     }
 
+    private fun handleCertStatus(): Response {
+        val response = JSONObject().apply {
+            put("installed", certManager.isCertificateInstalled())
+            put("shouldReinstall", certManager.shouldReinstallCertificate())
+            put("name", "RoRo Interceptor Root CA")
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
+    }
+
+    private fun handleCertDownload(uri: String): Response {
+        return try {
+            when (uri) {
+                "/api/cert/ca.pem" -> download(certManager.exportCACertificatePEM(), "application/x-pem-file", "RoRo_Interceptor_CA.pem")
+                "/api/cert/ca.der" -> download(certManager.exportCACertificateDER(), "application/x-x509-ca-cert", "RoRo_Interceptor_CA.der")
+                "/api/cert/ca.crt" -> download(certManager.exportCACertificateCRT(), "application/x-x509-ca-cert", "RoRo_Interceptor_CA.crt")
+                "/api/cert/ca.cer" -> download(certManager.exportCACertificateCER(), "application/x-x509-ca-cert", "RoRo_Interceptor_CA.cer")
+                else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
+            }
+        } catch (_: Exception) {
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Failed")
+        }
+    }
+
+    private fun download(bytes: ByteArray, mime: String, filename: String): Response {
+        val resp = newFixedLengthResponse(Response.Status.OK, mime, ByteArrayInputStream(bytes), bytes.size.toLong())
+        resp.addHeader("Content-Disposition", "attachment; filename=\"$filename\"")
+        resp.addHeader("Cache-Control", "no-store")
+        return resp
+    }
+
     private fun handleClear(): Response {
         // Clear in-memory list via service action and clear persisted snapshots/logs.
         try {
@@ -330,7 +364,7 @@ class WebServer(
 
     private fun serveWebUi(): Response {
         return try {
-            val input = context.assets.open("web_ui.html")
+            val input = context.assets.open("web_ui_bootstrap.html")
             newChunkedResponse(Response.Status.OK, "text/html", input)
         } catch (_: Exception) {
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Web UI not found")

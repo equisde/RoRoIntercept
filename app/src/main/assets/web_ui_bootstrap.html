@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="es" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RoRo Interceptor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" />
+  <style>
+    :root {
+      --roro-bg: #000000;
+      --roro-panel: #0b0f14;
+      --roro-panel-2: #0f151d;
+      --roro-border: rgba(255,255,255,0.10);
+      --roro-muted: rgba(255,255,255,0.65);
+    }
+    body { background: var(--roro-bg); }
+    .roro-surface { background: var(--roro-panel) !important; border-color: var(--roro-border) !important; }
+    .roro-surface-2 { background: var(--roro-panel-2) !important; border-color: var(--roro-border) !important; }
+    .nav-tabs { border-bottom-color: var(--roro-border) !important; }
+    .nav-tabs .nav-link { color: rgba(255,255,255,0.75); border-color: transparent !important; }
+    .nav-tabs .nav-link:hover { border-color: var(--roro-border) !important; background: rgba(255,255,255,0.04); }
+    .nav-tabs .nav-link.active { background: var(--roro-panel) !important; border-color: var(--roro-border) var(--roro-border) transparent !important; color: #fff; }
+    .list-group-item { background: var(--roro-panel-2) !important; border-color: var(--roro-border) !important; color: #fff; }
+    .list-group-item:hover { background: rgba(255,255,255,0.06) !important; }
+    pre { background: #05070a; border: 1px solid var(--roro-border); border-radius: 12px; padding: 14px; color: #e5e7eb; overflow: auto; max-height: 520px; }
+    .small-muted { color: var(--roro-muted); }
+    .condition-row { display: grid; grid-template-columns: 160px 180px 1fr auto; gap: 10px; align-items: center; }
+    @media (max-width: 768px) { .condition-row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body class="text-body">
+  <div class="container-fluid p-3">
+    <nav class="navbar navbar-expand-lg border rounded-3 roro-surface px-3">
+      <div class="d-flex flex-column">
+        <span class="navbar-brand mb-0 fw-semibold">RoRo Interceptor</span>
+        <small class="small-muted">Proxy :2580 · Web UI :8888</small>
+      </div>
+      <div class="ms-auto d-flex align-items-center gap-2 flex-wrap">
+        <span id="proxyStatusBadge" class="badge rounded-pill text-bg-danger">Detenido</span>
+        <button id="btnToggleProxy" class="btn btn-sm btn-success" onclick="toggleProxy()">Iniciar</button>
+        <button class="btn btn-sm btn-outline-light" onclick="showRuleModal()">Nueva regla</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="clearAll()">Limpiar</button>
+      </div>
+    </nav>
+
+    <div class="row g-3 mt-1">
+      <div class="col-12 col-md-3"><div class="card border rounded-3 roro-surface"><div class="card-body"><div class="small text-secondary">Requests</div><div class="fs-2 fw-bold" id="statRequests">0</div></div></div></div>
+      <div class="col-12 col-md-3"><div class="card border rounded-3 roro-surface"><div class="card-body"><div class="small text-secondary">Reglas activas</div><div class="fs-2 fw-bold" id="statRules">0</div></div></div></div>
+      <div class="col-12 col-md-3"><div class="card border rounded-3 roro-surface"><div class="card-body"><div class="small text-secondary">Modificados</div><div class="fs-2 fw-bold" id="statModified">0</div></div></div></div>
+      <div class="col-12 col-md-3"><div class="card border rounded-3 roro-surface"><div class="card-body"><div class="small text-secondary">Bloqueados</div><div class="fs-2 fw-bold" id="statBlocked">0</div></div></div></div>
+    </div>
+
+    <ul class="nav nav-tabs mt-3" role="tablist">
+      <li class="nav-item" role="presentation"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-requests" type="button" role="tab">Requests</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-rules" type="button" role="tab">Reglas</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-logs" type="button" role="tab">Logs</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-details" type="button" role="tab">Detalles</button></li>
+      <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-cert" type="button" role="tab">Certificado</button></li>
+    </ul>
+
+    <div class="tab-content border border-top-0 rounded-bottom p-3 roro-surface">
+      <div class="tab-pane fade show active" id="tab-requests" role="tabpanel">
+        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+          <div><div class="h5 mb-0">Requests</div><small class="small-muted">Últimos 100</small></div>
+          <button class="btn btn-sm btn-outline-danger" onclick="clearRequests()">Limpiar</button>
+        </div>
+        <div id="requestList" class="list-group"></div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-rules" role="tabpanel">
+        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+          <div><div class="h5 mb-0">Reglas</div><small class="small-muted">Conditions + Actions (AND)</small></div>
+          <button class="btn btn-sm btn-outline-light" onclick="showRuleModal()">Nueva</button>
+        </div>
+        <div id="ruleList" class="list-group"></div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-logs" role="tabpanel">
+        <div class="d-flex align-items-center justify-content-between mb-2 flex-wrap gap-2">
+          <div><div class="h5 mb-0">Logs</div><small class="small-muted">Últimos 200</small></div>
+          <button class="btn btn-sm btn-outline-danger" onclick="clearLogs()">Limpiar</button>
+        </div>
+        <pre id="logContainer" class="mb-0">Cargando...</pre>
+      </div>
+
+      <div class="tab-pane fade" id="tab-details" role="tabpanel">
+        <div class="h5 mb-2">Detalles</div>
+        <div id="requestDetail" class="small-muted">Selecciona un request…</div>
+      </div>
+
+      <div class="tab-pane fade" id="tab-cert" role="tabpanel">
+        <div class="h5 mb-2">Certificado CA (MITM)</div>
+        <p class="small-muted mb-3">Descarga e instala este CA en tu OS para confiar en HTTPS interceptado.</p>
+        <div class="card border rounded-3 roro-surface-2 mb-3"><div class="card-body"><div class="small text-secondary">Estado en este dispositivo</div><div id="certStatusText" class="mt-2">Cargando…</div></div></div>
+        <div class="d-flex gap-2 flex-wrap">
+          <a class="btn btn-sm btn-primary" href="/api/cert/ca.pem">CA (PEM)</a>
+          <a class="btn btn-sm btn-outline-light" href="/api/cert/ca.cer">CA (CER)</a>
+          <a class="btn btn-sm btn-outline-light" href="/api/cert/ca.crt">CA (CRT)</a>
+          <a class="btn btn-sm btn-outline-light" href="/api/cert/ca.der">CA (DER)</a>
+        </div>
+        <div class="mt-3 small-muted">Nota: apps con <b>certificate pinning</b> pueden fallar igual. Instala el CA en el almacén de certificados del OS.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="ruleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content roro-surface">
+        <form id="ruleForm" onsubmit="submitRule(event)">
+          <div class="modal-header border-0">
+            <div><div class="modal-title h5 mb-0">Nueva regla</div><small class="small-muted">AND conditions · Modify/Block/Allow</small></div>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body pt-0">
+            <div class="mb-3"><label class="form-label">Nombre</label><input class="form-control roro-surface-2" type="text" id="ruleName" required></div>
+            <div class="mb-3">
+              <label class="form-label">Condiciones (AND)</label>
+              <div id="conditionsContainer" class="vstack gap-2"></div>
+              <div class="d-flex gap-2 mt-2 flex-wrap">
+                <button type="button" class="btn btn-sm btn-outline-light" onclick="addConditionRow()">+ Condición</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetDefaultConditions()">Reset</button>
+              </div>
+              <small class="small-muted d-block mt-2">Ej: URL CONTAINS "api" AND METHOD EXACT "GET".</small>
+            </div>
+            <div class="row g-2">
+              <div class="col-12 col-md-6"><label class="form-label">Acción</label><select class="form-select roro-surface-2" id="ruleAction" onchange="toggleModifySection()"><option value="MODIFY">Modificar</option><option value="BLOCK">Bloquear</option><option value="ALLOW">Permitir</option></select></div>
+              <div class="col-12 col-md-6" id="applyToWrap"><label class="form-label">Aplicar a</label><select class="form-select roro-surface-2" id="ruleApplyTo"><option value="REQUEST">Request</option><option value="RESPONSE">Response</option><option value="BOTH" selected>Request + Response</option></select></div>
+            </div>
+            <div id="modifySection" class="mt-3">
+              <div class="mb-3"><label class="form-label">Headers a modificar (JSON)</label><textarea class="form-control roro-surface-2" id="ruleHeaders" rows="4"></textarea></div>
+              <div class="mb-3"><label class="form-label">Headers a remover (coma)</label><input class="form-control roro-surface-2" id="removeHeaders" type="text"></div>
+              <div class="mb-3"><label class="form-label">Buscar/Reemplazar headers (JSON array)</label><textarea class="form-control roro-surface-2" id="searchReplaceHeaders" rows="4"></textarea></div>
+              <div class="mb-3"><label class="form-label">Body reemplazo</label><textarea class="form-control roro-surface-2" id="ruleBody" rows="4"></textarea></div>
+              <div class="mb-3"><label class="form-label">Buscar/Reemplazar body (JSON array)</label><textarea class="form-control roro-surface-2" id="searchReplaceBody" rows="4"></textarea></div>
+            </div>
+          </div>
+          <div class="modal-footer border-0">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Crear</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let requests = [];
+    let rules = [];
+    let logs = [];
+    let proxyRunning = false;
+
+    const ALL_MATCH_TYPES = ['CONTAINS','NOT_CONTAINS','EXACT','NOT_EXACT','STARTS_WITH','NOT_STARTS_WITH','ENDS_WITH','NOT_ENDS_WITH','REGEX','NOT_REGEX'];
+    const METHOD_MATCH_TYPES = ['EXACT','NOT_EXACT'];
+    const HTTP_METHODS = ['GET','POST','PUT','DELETE','PATCH','OPTIONS','HEAD'];
+
+    function escapeHtml(s) {
+      return String(s ?? '')
+        .replaceAll('&','&amp;')
+        .replaceAll('<','&lt;')
+        .replaceAll('>','&gt;')
+        .replaceAll('"','&quot;')
+        .replaceAll("'",'&#39;');
+    }
+
+    function setProxyUi() {
+      const badge = document.getElementById('proxyStatusBadge');
+      const btn = document.getElementById('btnToggleProxy');
+      if (proxyRunning) {
+        badge.className = 'badge rounded-pill text-bg-success';
+        badge.textContent = 'Activo';
+        btn.className = 'btn btn-sm btn-danger';
+        btn.textContent = 'Detener';
+      } else {
+        badge.className = 'badge rounded-pill text-bg-danger';
+        badge.textContent = 'Detenido';
+        btn.className = 'btn btn-sm btn-success';
+        btn.textContent = 'Iniciar';
+      }
+    }
+
+    async function toggleProxy() {
+      const btn = document.getElementById('btnToggleProxy');
+      btn.disabled = true;
+      try {
+        const endpoint = proxyRunning ? '/api/proxy/stop' : '/api/proxy/start';
+        const response = await fetch(endpoint, { method: 'POST' });
+        const data = await response.json();
+        if (data && data.success) {
+          proxyRunning = !proxyRunning;
+          setProxyUi();
+        }
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function openTab(targetId) {
+      const btn = document.querySelector(`[data-bs-target="#${targetId}"]`);
+      if (!btn) return;
+      bootstrap.Tab.getOrCreateInstance(btn).show();
+    }
+
+    async function loadStatus() {
+      try {
+        const response = await fetch('/api/proxy/status');
+        const data = await response.json();
+        proxyRunning = !!(data && data.running);
+        setProxyUi();
+      } catch (_) {}
+    }
+
+    async function loadRequests() {
+      try {
+        const response = await fetch('/api/requests');
+        requests = await response.json();
+        renderRequests();
+        updateStats();
+      } catch (_) {}
+    }
+
+    async function loadRules() {
+      try {
+        const response = await fetch('/api/rules');
+        rules = await response.json();
+        renderRules();
+        updateStats();
+      } catch (_) {}
+    }
+
+    async function loadLogs() {
+      try {
+        const response = await fetch('/api/logs');
+        logs = await response.json();
+        renderLogs();
+      } catch (_) {}
+    }
+
+    async function loadCertStatus() {
+      try {
+        const response = await fetch('/api/cert/status');
+        const data = await response.json();
+        document.getElementById('certStatusText').textContent = data && data.installed ? '✅ CA instalado en este dispositivo' : '⚠️ CA NO instalado en este dispositivo';
+      } catch (_) {}
+    }
+
+    function renderRequests() {
+      const list = document.getElementById('requestList');
+      if (!Array.isArray(requests) || requests.length === 0) {
+        list.innerHTML = `<div class="list-group-item">Sin requests aún…</div>`;
+        return;
+      }
+
+      list.innerHTML = requests.slice(0, 100).map(req => {
+        const sc = req.response ? req.response.statusCode : null;
+        const statusBadge = sc
+          ? `<span class="badge text-bg-${sc >= 200 && sc < 300 ? 'success' : sc < 400 ? 'warning' : sc < 500 ? 'danger' : 'secondary'}">${sc}</span>`
+          : `<span class="badge text-bg-secondary">...</span>`;
+
+        return `
+          <button type="button" class="list-group-item list-group-item-action" onclick="showRequestDetail(${req.id})">
+            <div class="d-flex justify-content-between align-items-center gap-2">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="badge text-bg-light text-dark">${escapeHtml(req.method)}</span>
+                ${statusBadge}
+                ${req.modified ? '<span class="badge text-bg-warning">MOD</span>' : ''}
+                ${req.blocked ? '<span class="badge text-bg-info">BLK</span>' : ''}
+              </div>
+              <small class="small-muted">${new Date(req.timestamp).toLocaleTimeString()}</small>
+            </div>
+            <div class="mt-2" style="font-family: ui-monospace, monospace; font-size: 0.9rem;">${escapeHtml(req.url)}</div>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function renderRules() {
+      const list = document.getElementById('ruleList');
+      if (!Array.isArray(rules) || rules.length === 0) {
+        list.innerHTML = `<div class="list-group-item">Sin reglas…</div>`;
+        return;
+      }
+
+      list.innerHTML = rules.map(rule => {
+        const summary = (rule.conditions && rule.conditions.length)
+          ? rule.conditions.map(c => `${c.field} ${c.matchType} "${c.value}"`).join(' AND ')
+          : `${rule.matchType} "${rule.urlPattern}"`;
+
+        return `
+          <div class="list-group-item d-flex justify-content-between align-items-start gap-3">
+            <div>
+              <div class="fw-semibold">${escapeHtml(rule.name)}</div>
+              <div class="small-muted mt-1">${escapeHtml(summary)}</div>
+              <div class="mt-2 d-flex gap-2 flex-wrap">
+                <span class="badge text-bg-${rule.enabled ? 'success' : 'secondary'}">${rule.enabled ? 'ON' : 'OFF'}</span>
+                <span class="badge text-bg-${rule.action === 'BLOCK' ? 'warning' : rule.action === 'MODIFY' ? 'primary' : 'secondary'}">${rule.action}</span>
+              </div>
+            </div>
+            <div class="d-flex gap-2">
+              <button class="btn btn-sm ${rule.enabled ? 'btn-outline-warning' : 'btn-outline-success'}" onclick="toggleRule(${rule.id})">${rule.enabled ? 'Pausar' : 'Activar'}</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteRule(${rule.id})">Eliminar</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderLogs() {
+      const el = document.getElementById('logContainer');
+      if (!Array.isArray(logs) || logs.length === 0) {
+        el.textContent = 'Sin logs…';
+        return;
+      }
+
+      const lines = logs.slice(-200).map(log => {
+        const msg = (log && typeof log === 'object') ? (log.message ?? JSON.stringify(log)) : String(log);
+        const ts = (log && typeof log === 'object' && log.timestamp) ? new Date(log.timestamp).toLocaleTimeString() : '00:00:00';
+        return `[${ts}] ${msg}`;
+      }).reverse();
+
+      el.textContent = lines.join('\n');
+    }
+
+    function updateStats() {
+      document.getElementById('statRequests').textContent = Array.isArray(requests) ? requests.length : 0;
+      document.getElementById('statRules').textContent = Array.isArray(rules) ? rules.filter(r => r.enabled).length : 0;
+      document.getElementById('statModified').textContent = Array.isArray(requests) ? requests.filter(r => r.modified).length : 0;
+      document.getElementById('statBlocked').textContent = Array.isArray(requests) ? requests.filter(r => r.blocked).length : 0;
+    }
+
+    function showRequestDetail(id) {
+      const req = Array.isArray(requests) ? requests.find(r => r.id === id) : null;
+      if (!req) return;
+
+      const detail = document.getElementById('requestDetail');
+      const responseBlock = req.response ? `\n<div class="mt-3"><div class="fw-semibold">Response</div><pre>${escapeHtml(JSON.stringify(req.response, null, 2)).slice(0, 20000)}</pre></div>` : `<div class="mt-3 small-muted">Esperando response…</div>`;
+
+      detail.innerHTML = `\n<div class="fw-semibold" style="font-family: ui-monospace, monospace;">${escapeHtml(req.method)} ${escapeHtml(req.url)}</div>\n<div class="small-muted mt-1">${escapeHtml(req.host || '')} · ${new Date(req.timestamp).toLocaleString()}</div>\n<div class="mt-3"><div class="fw-semibold">Request</div><pre>${escapeHtml(JSON.stringify({ headers: req.headers, body: req.body }, null, 2)).slice(0, 20000)}</pre></div>${responseBlock}`;
+
+      openTab('tab-details');
+    }
+
+    function renderConditionRow(row, field, matchType, value) {
+      const fieldOptions = `\n<option value="URL" ${field === 'URL' ? 'selected' : ''}>URL</option>\n<option value="METHOD" ${field === 'METHOD' ? 'selected' : ''}>METHOD</option>`;
+      const matchTypes = (field === 'METHOD' ? METHOD_MATCH_TYPES : ALL_MATCH_TYPES).map(mt => `<option value="${mt}" ${mt === matchType ? 'selected' : ''}>${mt}</option>`).join('');
+      const valueInput = field === 'METHOD'
+        ? `<select class="form-select form-select-sm roro-surface-2 cond-value">${HTTP_METHODS.map(m => `<option value="${m}" ${m === value ? 'selected' : ''}>${m}</option>`).join('')}</select>`
+        : `<input class="form-control form-control-sm roro-surface-2 cond-value" type="text" value="${escapeHtml(value || '')}" />`;
+
+      row.innerHTML = `\n<div class="condition-row">\n<select class="form-select form-select-sm roro-surface-2 cond-field" onchange="onConditionFieldChange(this)">${fieldOptions}</select>\n<select class="form-select form-select-sm roro-surface-2 cond-match">${matchTypes}</select>\n${valueInput}\n<button type="button" class="btn btn-sm btn-outline-danger" onclick="removeConditionRow(this)">Quitar</button>\n</div>`;
+    }
+
+    function addConditionRow(initial = { field: 'URL', matchType: 'CONTAINS', value: '' }) {
+      const container = document.getElementById('conditionsContainer');
+      const row = document.createElement('div');
+      renderConditionRow(row, initial.field, initial.matchType, initial.value);
+      container.appendChild(row);
+    }
+
+    function removeConditionRow(btn) {
+      btn.closest('div')?.remove();
+    }
+
+    function onConditionFieldChange(selectEl) {
+      const rowHost = selectEl.closest('div');
+      const field = selectEl.value;
+      renderConditionRow(rowHost, field, field === 'METHOD' ? 'EXACT' : 'CONTAINS', field === 'METHOD' ? 'GET' : '');
+    }
+
+    function resetDefaultConditions() {
+      const container = document.getElementById('conditionsContainer');
+      container.innerHTML = '';
+      addConditionRow({ field: 'URL', matchType: 'CONTAINS', value: '' });
+    }
+
+    function toggleModifySection() {
+      const action = document.getElementById('ruleAction').value;
+      const show = action === 'MODIFY';
+      document.getElementById('modifySection').style.display = show ? 'block' : 'none';
+      document.getElementById('applyToWrap').style.display = show ? 'block' : 'none';
+    }
+
+    function showRuleModal() {
+      resetDefaultConditions();
+      toggleModifySection();
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('ruleModal')).show();
+    }
+
+    async function submitRule(e) {
+      e.preventDefault();
+      const action = document.getElementById('ruleAction').value;
+
+      const conditions = Array.from(document.querySelectorAll('#conditionsContainer .condition-row'))
+        .map(row => {
+          const field = row.querySelector('.cond-field')?.value;
+          const matchType = row.querySelector('.cond-match')?.value;
+          const valueEl = row.querySelector('.cond-value');
+          const value = (valueEl && 'value' in valueEl) ? String(valueEl.value).trim() : '';
+          if (!field || !matchType || !value) return null;
+          return { field, matchType, value };
+        })
+        .filter(Boolean);
+
+      if (conditions.length === 0) {
+        alert('Agrega al menos una condición (URL/METHOD).');
+        return;
+      }
+
+      const firstUrl = conditions.find(c => c.field === 'URL');
+      const legacyUrlPattern = firstUrl ? firstUrl.value : '';
+      const legacyMatchType = firstUrl ? firstUrl.matchType : 'CONTAINS';
+
+      const mods = {};
+      const headers = document.getElementById('ruleHeaders').value;
+      const removeHeaders = document.getElementById('removeHeaders').value;
+      const searchReplaceHeaders = document.getElementById('searchReplaceHeaders').value;
+      const body = document.getElementById('ruleBody').value;
+      const searchReplaceBody = document.getElementById('searchReplaceBody').value;
+
+      if (headers) { try { mods.modifyHeaders = JSON.parse(headers); } catch (e) { alert('Error en JSON de headers: ' + e.message); return; } }
+      if (removeHeaders) { mods.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h); }
+      if (searchReplaceHeaders) { try { mods.searchReplaceHeaders = JSON.parse(searchReplaceHeaders); } catch (e) { alert('Error en JSON de buscar/reemplazar headers: ' + e.message); return; } }
+      if (body) { mods.replaceBody = body; }
+      if (searchReplaceBody) { try { mods.searchReplaceBody = JSON.parse(searchReplaceBody); } catch (e) { alert('Error en JSON de buscar/reemplazar body: ' + e.message); return; } }
+
+      const applyTo = document.getElementById('ruleApplyTo').value;
+      const modsObj = Object.keys(mods).length > 0 ? mods : null;
+
+      const rule = {
+        id: Date.now(),
+        enabled: true,
+        name: document.getElementById('ruleName').value,
+        conditions,
+        urlPattern: legacyUrlPattern,
+        matchType: legacyMatchType,
+        action,
+        modifyRequest: (action === 'MODIFY' && (applyTo === 'REQUEST' || applyTo === 'BOTH')) ? modsObj : null,
+        modifyResponse: (action === 'MODIFY' && (applyTo === 'RESPONSE' || applyTo === 'BOTH')) ? modsObj : null
+      };
+
+      await fetch('/api/rules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule) });
+
+      const modalEl = document.getElementById('ruleModal');
+      bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+      document.getElementById('ruleForm').reset();
+      document.getElementById('conditionsContainer').innerHTML = '';
+
+      loadRules();
+    }
+
+    async function deleteRule(id) {
+      if (!confirm('¿Eliminar esta regla?')) return;
+      await fetch(`/api/rules/${id}`, { method: 'DELETE' });
+      loadRules();
+    }
+
+    async function toggleRule(id) {
+      const rule = rules.find(r => r.id === id);
+      if (!rule) return;
+      rule.enabled = !rule.enabled;
+      await fetch(`/api/rules/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rule) });
+      loadRules();
+    }
+
+    async function clearRequests() {
+      if (!confirm('¿Limpiar todos los requests?')) return;
+      await fetch('/api/clear', { method: 'POST' });
+      requests = [];
+      renderRequests();
+      updateStats();
+    }
+
+    async function clearAll() {
+      if (!confirm('¿Limpiar requests y datos?')) return;
+      await fetch('/api/clear', { method: 'POST' });
+      requests = [];
+      renderRequests();
+      updateStats();
+    }
+
+    function clearLogs() { logs = []; renderLogs(); }
+
+    resetDefaultConditions();
+    loadStatus();
+    loadRequests();
+    loadRules();
+    loadLogs();
+    loadCertStatus();
+
+    setInterval(() => { loadRequests(); loadRules(); loadLogs(); loadCertStatus(); }, 2000);
+  </script>
+</body>
+</html>

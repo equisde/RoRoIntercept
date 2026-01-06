@@ -52,11 +52,20 @@ class ProxyService : Service() {
 
         // Ensure Web UI is available even when the app UI isn't open
         com.httpinterceptor.web.WebServerService.start(this)
-        
+
         // Start foreground immediately to keep service alive
         startForeground(NOTIFICATION_ID, createNotification("Servicio iniciado"))
         acquireWakeLock()
-        
+
+        // If the OS restarts this sticky service, auto-resume the proxy if it was running.
+        if (getSharedPreferences("proxy_prefs", MODE_PRIVATE).getBoolean("proxy_running", false)) {
+            try {
+                startProxy()
+            } catch (e: Exception) {
+                Log.e(TAG, "Auto-resume proxy failed", e)
+            }
+        }
+
         Log.d(TAG, "ProxyService created")
     }
     
