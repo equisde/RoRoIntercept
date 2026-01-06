@@ -129,9 +129,44 @@
             <div id="modifySection" class="mt-3">
               <div class="mb-3"><label class="form-label">Headers a modificar (JSON)</label><textarea class="form-control roro-surface-2" id="ruleHeaders" rows="4"></textarea></div>
               <div class="mb-3"><label class="form-label">Headers a remover (coma)</label><input class="form-control roro-surface-2" id="removeHeaders" type="text"></div>
-              <div class="mb-3"><label class="form-label">Buscar/Reemplazar headers (JSON array)</label><textarea class="form-control roro-surface-2" id="searchReplaceHeaders" rows="4"></textarea></div>
+              <div class="mb-3">
+                <label class="form-label">Buscar y reemplazar en Headers</label>
+                <div class="row g-2">
+                  <div class="col-12 col-md-3">
+                    <select class="form-select form-select-sm roro-surface-2" id="srhMode">
+                      <option value="TEXT" selected>Texto</option>
+                      <option value="REGEX">Regex</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <input class="form-control form-control-sm roro-surface-2" id="srhSearch" type="text" placeholder="String a buscar">
+                  </div>
+                  <div class="col-12 col-md-5">
+                    <input class="form-control form-control-sm roro-surface-2" id="srhReplace" type="text" placeholder="String a reemplazar">
+                  </div>
+                </div>
+                <small class="small-muted d-block mt-2">Se aplica a todos los valores de headers.</small>
+              </div>
+
               <div class="mb-3"><label class="form-label">Body reemplazo</label><textarea class="form-control roro-surface-2" id="ruleBody" rows="4"></textarea></div>
-              <div class="mb-3"><label class="form-label">Buscar/Reemplazar body (JSON array)</label><textarea class="form-control roro-surface-2" id="searchReplaceBody" rows="4"></textarea></div>
+
+              <div class="mb-3">
+                <label class="form-label">Buscar y reemplazar en Body</label>
+                <div class="row g-2">
+                  <div class="col-12 col-md-3">
+                    <select class="form-select form-select-sm roro-surface-2" id="srbMode">
+                      <option value="TEXT" selected>Texto</option>
+                      <option value="REGEX">Regex</option>
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <input class="form-control form-control-sm roro-surface-2" id="srbSearch" type="text" placeholder="String a buscar">
+                  </div>
+                  <div class="col-12 col-md-5">
+                    <input class="form-control form-control-sm roro-surface-2" id="srbReplace" type="text" placeholder="String a reemplazar">
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="modal-footer border-0">
@@ -413,15 +448,22 @@
       const mods = {};
       const headers = document.getElementById('ruleHeaders').value;
       const removeHeaders = document.getElementById('removeHeaders').value;
-      const searchReplaceHeaders = document.getElementById('searchReplaceHeaders').value;
+
+      const srhMode = document.getElementById('srhMode')?.value || 'TEXT';
+      const srhSearch = (document.getElementById('srhSearch')?.value || '').trim();
+      const srhReplace = document.getElementById('srhReplace')?.value ?? '';
+
       const body = document.getElementById('ruleBody').value;
-      const searchReplaceBody = document.getElementById('searchReplaceBody').value;
+
+      const srbMode = document.getElementById('srbMode')?.value || 'TEXT';
+      const srbSearch = (document.getElementById('srbSearch')?.value || '').trim();
+      const srbReplace = document.getElementById('srbReplace')?.value ?? '';
 
       if (headers) { try { mods.modifyHeaders = JSON.parse(headers); } catch (e) { alert('Error en JSON de headers: ' + e.message); return; } }
       if (removeHeaders) { mods.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h); }
-      if (searchReplaceHeaders) { try { mods.searchReplaceHeaders = JSON.parse(searchReplaceHeaders); } catch (e) { alert('Error en JSON de buscar/reemplazar headers: ' + e.message); return; } }
+      if (srhSearch) { mods.searchReplaceHeaders = [{ search: srhSearch, replace: String(srhReplace), useRegex: srhMode === 'REGEX' }]; }
       if (body) { mods.replaceBody = body; }
-      if (searchReplaceBody) { try { mods.searchReplaceBody = JSON.parse(searchReplaceBody); } catch (e) { alert('Error en JSON de buscar/reemplazar body: ' + e.message); return; } }
+      if (srbSearch) { mods.searchReplaceBody = [{ search: srbSearch, replace: String(srbReplace), useRegex: srbMode === 'REGEX' }]; }
 
       const applyTo = document.getElementById('ruleApplyTo').value;
       const modsObj = Object.keys(mods).length > 0 ? mods : null;
