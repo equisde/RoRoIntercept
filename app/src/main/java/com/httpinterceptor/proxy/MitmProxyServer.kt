@@ -371,8 +371,8 @@ class MitmProxyServer(
             
             for (rule in rules) {
                 if (!rule.enabled) continue
-                if (!matchesRule(rule, request.url)) continue
-                if (rule.methods?.isNotEmpty() == true && !rule.methods.any { it.equals(request.method, ignoreCase = true) }) continue
+                if (!matchesRule(rule, request)) continue
+                if (rule.conditions.isNullOrEmpty() && rule.methods?.isNotEmpty() == true && !rule.methods.any { it.equals(request.method, ignoreCase = true) }) continue
                 
                 when (rule.action) {
                     RuleAction.MODIFY -> {
@@ -673,9 +673,17 @@ class MitmProxyServer(
         }
     }
     
-    private fun matchesRule(rule: ProxyRule, url: String): Boolean {
+    private fun matchesRule(rule: ProxyRule, request: com.httpinterceptor.model.HttpRequest): Boolean {
+        val conditions = rule.conditions
+        if (!conditions.isNullOrEmpty()) {
+            return conditions.all { matchesCondition(it, request) }
+        }
+        return matchesRuleLegacy(rule, request.url)
+    }
+
+    private fun matchesRuleLegacy(rule: ProxyRule, url: String): Boolean {
         return try {
-            val match = when (rule.matchType) {
+            when (rule.matchType) {
                 MatchType.CONTAINS -> url.contains(rule.urlPattern, ignoreCase = true)
                 MatchType.NOT_CONTAINS -> !url.contains(rule.urlPattern, ignoreCase = true)
                 MatchType.REGEX -> Regex(rule.urlPattern).containsMatchIn(url)
@@ -687,9 +695,54 @@ class MitmProxyServer(
                 MatchType.ENDS_WITH -> url.endsWith(rule.urlPattern, ignoreCase = true)
                 MatchType.NOT_ENDS_WITH -> !url.endsWith(rule.urlPattern, ignoreCase = true)
             }
-            match
         } catch (e: Exception) {
             listener.onLog("Invalid rule pattern: ${rule.urlPattern}", "WARN")
+            false
+        }
+    }
+
+    private fun matchesCondition(condition: RuleCondition, request: com.httpinterceptor.model.HttpRequest): Boolean {
+        return try {
+            when (condition.field) {
+                RuleConditionField.URL -> matchText(request.url, condition.matchType, condition.value)
+                RuleConditionField.METHOD -> matchText(request.method, condition.matchType, condition.value)
+                RuleConditionField.REQUEST_HEADER -> {
+                    val headerName = condition.headerName
+                    if (headerName.isNullOrBlank()) {
+                        val all = request.headers.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                        matchText(all, condition.matchType, condition.value)
+                    } else {
+                        val v = request.headers[headerName].orEmpty()
+                        matchText(v, condition.matchType, condition.value)
+                    }
+                }
+                RuleConditionField.REQUEST_BODY -> {
+                    val body = request.body?.toString(Charsets.UTF_8).orEmpty()
+                    matchText(body, condition.matchType, condition.value)
+                }
+                // Response-only conditions are evaluated at response stage (not implemented here).
+                else -> true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun matchText(text: String, matchType: MatchType, pattern: String): Boolean {
+        return try {
+            when (matchType) {
+                MatchType.CONTAINS -> text.contains(pattern, ignoreCase = true)
+                MatchType.NOT_CONTAINS -> !text.contains(pattern, ignoreCase = true)
+                MatchType.EXACT -> text.equals(pattern, ignoreCase = true)
+                MatchType.NOT_EXACT -> !text.equals(pattern, ignoreCase = true)
+                MatchType.STARTS_WITH -> text.startsWith(pattern, ignoreCase = true)
+                MatchType.NOT_STARTS_WITH -> !text.startsWith(pattern, ignoreCase = true)
+                MatchType.ENDS_WITH -> text.endsWith(pattern, ignoreCase = true)
+                MatchType.NOT_ENDS_WITH -> !text.endsWith(pattern, ignoreCase = true)
+                MatchType.REGEX -> Regex(pattern).containsMatchIn(text)
+                MatchType.NOT_REGEX -> !Regex(pattern).containsMatchIn(text)
+            }
+        } catch (_: Exception) {
             false
         }
     }
@@ -709,8 +762,8 @@ class MitmProxyServer(
         
         for (rule in rules) {
             if (!rule.enabled) continue
-            if (!matchesRule(rule, httpRequest.url)) continue
-            if (rule.statusCodes?.isNotEmpty() == true && !rule.statusCodes.contains(appResponse.statusCode)) continue
+            if (!matchesRule(rule, httpRequest)) continue
+            if (rule.conditions.isNullOrEmpty() && rule.statusCodes?.isNotEmpty() == true && !rule.statusCodes.contains(appResponse.statusCode)) continue
             
             when (rule.action) {
                 RuleAction.BLOCK -> {

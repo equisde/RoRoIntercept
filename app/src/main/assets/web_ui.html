@@ -20,6 +20,9 @@
             --text: #e5e7eb;
             --text-muted: #9ca3af;
             --border: rgba(255,255,255,0.10);
+
+            /* Back-compat for older inline styles */
+            --dark: var(--text);
         }
         
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -172,9 +175,28 @@
             transform: translateY(-2px);
         }
         
+        .btn-secondary {
+            background: var(--panel-2);
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+
         .btn-sm {
             padding: 6px 12px;
             font-size: 12px;
+        }
+
+        .condition-row {
+            display: grid;
+            grid-template-columns: 140px 170px 1fr auto;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .condition-row select,
+        .condition-row input {
+            margin: 0;
         }
         
         /* Stats Cards */
@@ -662,18 +684,15 @@
                     <input type="text" id="ruleName" placeholder="Ej: Modificar API Token" required>
                 </div>
                 <div class="form-group">
-                    <label>🔗 Patrón URL</label>
-                    <input type="text" id="rulePattern" placeholder="Ej: api.example.com" required>
-                </div>
-                <div class="form-group">
-                    <label>🎯 Tipo de Match</label>
-                    <select id="ruleMatchType">
-                        <option value="CONTAINS">Contiene</option>
-                        <option value="EXACT">Exacto</option>
-                        <option value="STARTS_WITH">Empieza con</option>
-                        <option value="ENDS_WITH">Termina con</option>
-                        <option value="REGEX">RegEx</option>
-                    </select>
+                    <label>🧩 Condiciones (AND)</label>
+                    <div id="conditionsContainer"></div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="addConditionRow()">+ Condición</button>
+                        <button type="button" class="btn btn-sm btn-secondary" onclick="resetDefaultConditions()">Reset</button>
+                    </div>
+                    <small style="display:block; margin-top: 8px; color: var(--text-muted);">
+                        Ej: URL contiene "api" y METHOD es "GET".
+                    </small>
                 </div>
                 <div class="form-group">
                     <label>⚡ Acción</label>
@@ -684,6 +703,15 @@
                     </select>
                 </div>
                 <div id="modifySection">
+                    <div class="form-group">
+                        <label>📦 Aplicar cambios a</label>
+                        <select id="ruleApplyTo">
+                            <option value="REQUEST">Request</option>
+                            <option value="RESPONSE">Response</option>
+                            <option value="BOTH" selected>Request + Response</option>
+                        </select>
+                    </div>
+
                     <div class="form-group">
                         <label>📝 Headers a Modificar (JSON)</label>
                         <textarea id="ruleHeaders" placeholder='{"Authorization": "Bearer NEW_TOKEN"}'></textarea>
@@ -850,9 +878,11 @@
                     <div>
                         <strong style="font-size: 16px;">${rule.name}</strong>
                         <br>
-                        <small style="color: #6b7280;">${rule.urlPattern}</small>
+                        <small style="color: var(--text-muted);">${(rule.conditions && rule.conditions.length)
+                            ? rule.conditions.map(c => `${c.field} ${c.matchType} "${c.value}"`).join(' AND ')
+                            : `${rule.matchType} "${rule.urlPattern}"`}</small>
                         <br>
-                        <span class="badge badge-info">${rule.matchType}</span>
+                        <span class="badge badge-info">${(rule.conditions && rule.conditions.length) ? 'AND' : rule.matchType}</span>
                         <span class="badge ${rule.action === 'BLOCK' ? 'badge-warning' : 'badge-success'}">${rule.action}</span>
                     </div>
                     <div style="display: flex; gap: 8px;">
@@ -931,14 +961,71 @@
             `;
         }
         
-        // Rule Modal
+        // Rule Modal (Fiddler-like: Conditions + Actions)
+        const ALL_MATCH_TYPES = [
+            'CONTAINS','NOT_CONTAINS','EXACT','NOT_EXACT','STARTS_WITH','NOT_STARTS_WITH','ENDS_WITH','NOT_ENDS_WITH','REGEX','NOT_REGEX'
+        ];
+        const METHOD_MATCH_TYPES = ['EXACT','NOT_EXACT'];
+        const HTTP_METHODS = ['GET','POST','PUT','DELETE','PATCH','OPTIONS','HEAD'];
+
+        function renderConditionRow(row, field, matchType, value) {
+            const fieldOptions = `
+                <option value="URL" ${field === 'URL' ? 'selected' : ''}>URL</option>
+                <option value="METHOD" ${field === 'METHOD' ? 'selected' : ''}>METHOD</option>
+            `;
+
+            const matchTypes = (field === 'METHOD' ? METHOD_MATCH_TYPES : ALL_MATCH_TYPES)
+                .map(mt => `<option value="${mt}" ${mt === matchType ? 'selected' : ''}>${mt}</option>`)
+                .join('');
+
+            const valueInput = field === 'METHOD'
+                ? `<select class="cond-value">${HTTP_METHODS.map(m => `<option value="${m}" ${m === value ? 'selected' : ''}>${m}</option>`).join('')}</select>`
+                : `<input class="cond-value" type="text" placeholder="Ej: api.example.com" value="${(value || '').replace(/"/g, '&quot;')}">`;
+
+            row.innerHTML = `
+                <select class="cond-field" onchange="onConditionFieldChange(this)">${fieldOptions}</select>
+                <select class="cond-match">${matchTypes}</select>
+                ${valueInput}
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeConditionRow(this)">🗑️</button>
+            `;
+        }
+
+        function addConditionRow(initial = { field: 'URL', matchType: 'CONTAINS', value: '' }) {
+            const container = document.getElementById('conditionsContainer');
+            const row = document.createElement('div');
+            row.className = 'condition-row';
+            renderConditionRow(row, initial.field, initial.matchType, initial.value);
+            container.appendChild(row);
+        }
+
+        function removeConditionRow(btn) {
+            btn.closest('.condition-row')?.remove();
+        }
+
+        function onConditionFieldChange(selectEl) {
+            const row = selectEl.closest('.condition-row');
+            const field = selectEl.value;
+            const defaultMatch = field === 'METHOD' ? 'EXACT' : 'CONTAINS';
+            const defaultValue = field === 'METHOD' ? 'GET' : '';
+            renderConditionRow(row, field, defaultMatch, defaultValue);
+        }
+
+        function resetDefaultConditions() {
+            const container = document.getElementById('conditionsContainer');
+            container.innerHTML = '';
+            addConditionRow({ field: 'URL', matchType: 'CONTAINS', value: '' });
+        }
+
         function showRuleModal() {
+            resetDefaultConditions();
+            toggleModifySection();
             document.getElementById('ruleModal').classList.add('active');
         }
         
         function closeRuleModal() {
             document.getElementById('ruleModal').classList.remove('active');
             document.getElementById('ruleForm').reset();
+            document.getElementById('conditionsContainer').innerHTML = '';
         }
         
         function toggleModifySection() {
@@ -950,56 +1037,86 @@
         async function submitRule(e) {
             e.preventDefault();
             
-            const modifyRequest = {};
+            const action = document.getElementById('ruleAction').value;
+
+            const conditions = Array.from(document.querySelectorAll('#conditionsContainer .condition-row'))
+                .map(row => {
+                    const field = row.querySelector('.cond-field')?.value;
+                    const matchType = row.querySelector('.cond-match')?.value;
+                    const valueEl = row.querySelector('.cond-value');
+                    const value = (valueEl && 'value' in valueEl) ? String(valueEl.value).trim() : '';
+                    if (!field || !matchType || !value) return null;
+                    return { field, matchType, value };
+                })
+                .filter(Boolean);
+
+            if (conditions.length === 0) {
+                alert('Agrega al menos una condición (URL/METHOD).');
+                return;
+            }
+
+            const firstUrl = conditions.find(c => c.field === 'URL');
+            const legacyUrlPattern = firstUrl ? firstUrl.value : '';
+            const legacyMatchType = firstUrl ? firstUrl.matchType : 'CONTAINS';
+
+            const mods = {};
             const headers = document.getElementById('ruleHeaders').value;
             const removeHeaders = document.getElementById('removeHeaders').value;
             const searchReplaceHeaders = document.getElementById('searchReplaceHeaders').value;
             const body = document.getElementById('ruleBody').value;
             const searchReplaceBody = document.getElementById('searchReplaceBody').value;
-            
+
             if (headers) {
                 try {
-                    modifyRequest.modifyHeaders = JSON.parse(headers);
+                    mods.modifyHeaders = JSON.parse(headers);
                 } catch (e) {
                     alert('Error en JSON de headers: ' + e.message);
                     return;
                 }
             }
-            
+
             if (removeHeaders) {
-                modifyRequest.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h);
+                mods.removeHeaders = removeHeaders.split(',').map(h => h.trim()).filter(h => h);
             }
-            
+
             if (searchReplaceHeaders) {
                 try {
-                    modifyRequest.searchReplaceHeaders = JSON.parse(searchReplaceHeaders);
+                    mods.searchReplaceHeaders = JSON.parse(searchReplaceHeaders);
                 } catch (e) {
                     alert('Error en JSON de buscar/reemplazar headers: ' + e.message);
                     return;
                 }
             }
-            
+
             if (body) {
-                modifyRequest.replaceBody = body;
+                mods.replaceBody = body;
             }
-            
+
             if (searchReplaceBody) {
                 try {
-                    modifyRequest.searchReplaceBody = JSON.parse(searchReplaceBody);
+                    mods.searchReplaceBody = JSON.parse(searchReplaceBody);
                 } catch (e) {
                     alert('Error en JSON de buscar/reemplazar body: ' + e.message);
                     return;
                 }
             }
-            
+
+            const applyTo = document.getElementById('ruleApplyTo').value;
+            const modsObj = Object.keys(mods).length > 0 ? mods : null;
+
             const rule = {
                 id: Date.now(),
                 enabled: true,
                 name: document.getElementById('ruleName').value,
-                urlPattern: document.getElementById('rulePattern').value,
-                matchType: document.getElementById('ruleMatchType').value,
-                action: document.getElementById('ruleAction').value,
-                modifyRequest: Object.keys(modifyRequest).length > 0 ? modifyRequest : null
+
+                conditions,
+
+                urlPattern: legacyUrlPattern,
+                matchType: legacyMatchType,
+
+                action,
+                modifyRequest: (action === 'MODIFY' && (applyTo === 'REQUEST' || applyTo === 'BOTH')) ? modsObj : null,
+                modifyResponse: (action === 'MODIFY' && (applyTo === 'RESPONSE' || applyTo === 'BOTH')) ? modsObj : null
             };
             
             try {

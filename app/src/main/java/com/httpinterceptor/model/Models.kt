@@ -43,8 +43,15 @@ data class ProxyRule(
     val id: Long,
     val enabled: Boolean,
     val name: String,
+
+    // New-style rule builder (Fiddler-like): multiple conditions combined with AND.
+    // If null/empty, legacy urlPattern/matchType/methods/statusCodes are used.
+    val conditions: List<RuleCondition>? = null,
+
+    // Legacy (kept for backward compatibility)
     val urlPattern: String,
     val matchType: MatchType,
+
     val action: RuleAction,
     val modifyRequest: ModifyAction? = null,
     val modifyResponse: ModifyAction? = null,
@@ -67,6 +74,23 @@ enum class MatchType {
     NOT_STARTS_WITH,
     NOT_ENDS_WITH
 }
+
+enum class RuleConditionField {
+    URL,
+    METHOD,
+    REQUEST_HEADER,
+    REQUEST_BODY,
+    RESPONSE_HEADER,
+    RESPONSE_BODY,
+    STATUS_CODE
+}
+
+data class RuleCondition(
+    val field: RuleConditionField,
+    val matchType: MatchType = MatchType.CONTAINS,
+    val value: String,
+    val headerName: String? = null
+)
 
 enum class RuleAction {
     ALLOW, BLOCK, MODIFY, REDIRECT, MOCK_RESPONSE, DELAY
