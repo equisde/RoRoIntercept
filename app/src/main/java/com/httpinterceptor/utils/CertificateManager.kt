@@ -123,8 +123,22 @@ class CertificateManager(private val context: Context) {
             true,
             org.bouncycastle.asn1.x509.KeyUsage(
                 org.bouncycastle.asn1.x509.KeyUsage.keyCertSign or
-                    org.bouncycastle.asn1.x509.KeyUsage.cRLSign
+                    org.bouncycastle.asn1.x509.KeyUsage.cRLSign or
+                    org.bouncycastle.asn1.x509.KeyUsage.digitalSignature
             )
+        )
+
+        // Add Subject/Authority Key Identifiers (helps strict verifiers)
+        val extUtils = org.bouncycastle.cert.jcajce.JcaX509ExtensionUtils()
+        certBuilder.addExtension(
+            Extension.subjectKeyIdentifier,
+            false,
+            extUtils.createSubjectKeyIdentifier(keyPair.public)
+        )
+        certBuilder.addExtension(
+            Extension.authorityKeyIdentifier,
+            false,
+            extUtils.createAuthorityKeyIdentifier(keyPair.public)
         )
 
         val signer = JcaContentSignerBuilder("SHA256withRSA")
@@ -166,6 +180,13 @@ class CertificateManager(private val context: Context) {
             notAfter,
             subject,
             keyPair.public
+        )
+
+        // Mark as end-entity (not a CA) for strict clients
+        certBuilder.addExtension(
+            Extension.basicConstraints,
+            true,
+            org.bouncycastle.asn1.x509.BasicConstraints(false)
         )
 
         // Add SAN (Subject Alternative Name) - CRITICAL for modern browsers
