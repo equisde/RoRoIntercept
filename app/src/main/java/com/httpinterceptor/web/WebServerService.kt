@@ -156,10 +156,26 @@ class WebServerService : Service() {
     }
     
     private fun createNotification(message: String = "Web UI is running"): Notification {
+        val openApp = PendingIntent.getActivity(
+            this,
+            0,
+            Intent(this, com.httpinterceptor.ui.MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        val batteryPi = PendingIntent.getActivity(
+            this,
+            11,
+            Intent(this, com.httpinterceptor.ui.BatteryOptimizationActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("RoRo Interceptor - Web UI")
             .setContentText(message)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentIntent(openApp)
+            .addAction(android.R.drawable.ic_menu_manage, "Batería", batteryPi)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
@@ -200,6 +216,7 @@ class WebServer(
             uri == "/api/clear" && session.method == Method.POST -> handleClear()
             uri == "/api/cert/status" -> handleCertStatus()
             uri.startsWith("/api/cert/") -> handleCertDownload(uri)
+            uri == "/api/system/status" -> handleSystemStatus()
             uri.startsWith("/static/") -> serveStaticFile(uri)
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not found")
         }
@@ -348,6 +365,25 @@ class WebServer(
         } catch (_: Exception) {
             newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "text/plain", "Failed")
         }
+    }
+
+    private fun handleSystemStatus(): Response {
+        val ignoring = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                pm.isIgnoringBatteryOptimizations(context.packageName)
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            true
+        }
+
+        val response = JSONObject().apply {
+            put("ignoringBatteryOptimizations", ignoring)
+            put("sdkInt", Build.VERSION.SDK_INT)
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
     }
 
     private fun download(bytes: ByteArray, mime: String, filename: String): Response {

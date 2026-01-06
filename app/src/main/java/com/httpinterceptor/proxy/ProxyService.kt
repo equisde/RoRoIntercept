@@ -269,12 +269,19 @@ class ProxyService : Service() {
             this, 0, intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+
+        val batteryIntent = Intent(this, com.httpinterceptor.ui.BatteryOptimizationActivity::class.java)
+        val batteryPi = PendingIntent.getActivity(
+            this, 10, batteryIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HTTP Interceptor")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_manage, "Batería", batteryPi)
             .setOngoing(true)
             .build()
     }

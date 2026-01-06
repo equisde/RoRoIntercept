@@ -92,6 +92,7 @@
         <div class="h5 mb-2">Certificado CA (MITM)</div>
         <p class="small-muted mb-3">Descarga e instala este CA en tu OS para confiar en HTTPS interceptado.</p>
         <div class="card border rounded-3 roro-surface-2 mb-3"><div class="card-body"><div class="small text-secondary">Estado en este dispositivo</div><div id="certStatusText" class="mt-2">Cargando…</div></div></div>
+        <div class="card border rounded-3 roro-surface-2 mb-3"><div class="card-body"><div class="small text-secondary">Background / batería</div><div id="batteryStatusText" class="mt-2">Cargando…</div><div class="small-muted mt-2">Tip: usa el botón <b>Batería</b> en la notificación del servicio para poner la app en “Sin restricciones”.</div></div></div>
         <div class="d-flex gap-2 flex-wrap">
           <a class="btn btn-sm btn-primary" href="/api/cert/ca.pem">CA (PEM)</a>
           <a class="btn btn-sm btn-outline-light" href="/api/cert/ca.cer">CA (CER)</a>
@@ -302,6 +303,15 @@
         const response = await fetch('/api/cert/status');
         const data = await response.json();
         document.getElementById('certStatusText').textContent = data && data.installed ? '✅ CA instalado en este dispositivo' : '⚠️ CA NO instalado en este dispositivo';
+      } catch (_) {}
+    }
+
+    async function loadSystemStatus() {
+      try {
+        const response = await fetch('/api/system/status');
+        const data = await response.json();
+        const ok = data && data.ignoringBatteryOptimizations;
+        document.getElementById('batteryStatusText').textContent = ok ? '✅ Optimización de batería desactivada (OK)' : '⚠️ Optimización de batería ACTIVADA (puede matar el proxy/web en background)';
       } catch (_) {}
     }
 
@@ -570,8 +580,9 @@
     loadRules();
     loadLogs();
     loadCertStatus();
+    loadSystemStatus();
 
-    setInterval(() => { loadRequests(); loadRules(); loadLogs(); loadCertStatus(); }, 2000);
+    setInterval(() => { loadRequests(); loadRules(); loadLogs(); loadCertStatus(); loadSystemStatus(); }, 2000);
   </script>
 </body>
 </html>

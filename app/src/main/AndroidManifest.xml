@@ -57,33 +57,39 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        
+
+        <activity
+            android:name=".ui.BatteryOptimizationActivity"
+            android:exported="false"
+            android:excludeFromRecents="true" />
+
         <activity
             android:name=".ui.RequestDetailActivity"
             android:parentActivityName=".ui.MainActivity" />
-        
+
         <activity
             android:name=".ui.CrashLogsActivity"
             android:parentActivityName=".ui.MainActivity"
             android:label="Crash Logs" />
-        
+
         <activity
             android:name=".ui.RulesActivity"
             android:parentActivityName=".ui.MainActivity"
             android:label="Reglas" />
-        
+
         <service
             android:name=".proxy.ProxyService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-        
+
         <service
             android:name=".web.WebServerService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
-        
+
+
         <receiver
             android:name=".boot.BootReceiver"
             android:exported="false">
