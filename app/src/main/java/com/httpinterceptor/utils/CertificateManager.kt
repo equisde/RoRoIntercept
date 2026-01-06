@@ -25,9 +25,9 @@ import android.util.Base64
 
 class CertificateManager(private val context: Context) {
 
-    private val keyStore: KeyStore
-    private val caCert: X509Certificate
-    private val caPrivateKey: PrivateKey
+    private lateinit var keyStore: KeyStore
+    private lateinit var caCert: X509Certificate
+    private lateinit var caPrivateKey: PrivateKey
     private val secureRandom = SecureRandom()
 
     private val serverCertCache = object : LinkedHashMap<String, Pair<X509Certificate, PrivateKey>>(128, 0.75f, true) {
@@ -47,33 +47,41 @@ class CertificateManager(private val context: Context) {
         Security.removeProvider("BC")
         Security.insertProviderAt(BouncyCastleProvider(), 1)
 
-        val certDir = File(context.filesDir, "certs")
-        if (!certDir.exists()) certDir.mkdirs()
+        // Critical: both WebServerService and ProxyService may instantiate CertificateManager.
+        // Synchronize keystore creation/loading to avoid generating two different CAs.
+        synchronized(INIT_LOCK) {
+            val certDir = File(context.filesDir, "certs")
+            if (!certDir.exists()) certDir.mkdirs()
 
-        val keyStoreFile = File(certDir, "proxy.keystore")
-        keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
+            val keyStoreFile = File(certDir, "proxy.keystore")
+            keyStore = KeyStore.getInstance(KeyStore.getDefaultType())
 
-        if (keyStoreFile.exists()) {
-            keyStoreFile.inputStream().use { fis ->
-                keyStore.load(fis, KEYSTORE_PASSWORD.toCharArray())
-            }
-            caCert = keyStore.getCertificate(CA_ALIAS) as X509Certificate
-            caPrivateKey = keyStore.getKey(CA_ALIAS, KEYSTORE_PASSWORD.toCharArray()) as PrivateKey
-        } else {
-            keyStore.load(null, null)
-            val (cert, key) = generateCACertificate()
-            caCert = cert
-            caPrivateKey = key
+            if (keyStoreFile.exists()) {
+                keyStoreFile.inputStream().use { fis ->
+                    keyStore.load(fis, KEYSTORE_PASSWORD.toCharArray())
+                }
+                caCert = keyStore.getCertificate(CA_ALIAS) as X509Certificate
+                caPrivateKey = keyStore.getKey(CA_ALIAS, KEYSTORE_PASSWORD.toCharArray()) as PrivateKey
+            } else {
+                keyStore.load(null, null)
+                val (cert, key) = generateCACertificate()
+                keyStore.setKeyEntry(
+                    CA_ALIAS,
+                    key,
+                    KEYSTORE_PASSWORD.toCharArray(),
+                    arrayOf(cert)
+                )
 
-            keyStore.setKeyEntry(
-                CA_ALIAS,
-                caPrivateKey,
-                KEYSTORE_PASSWORD.toCharArray(),
-                arrayOf(caCert)
-            )
+                FileOutputStream(keyStoreFile).use { fos ->
+                    keyStore.store(fos, KEYSTORE_PASSWORD.toCharArray())
+                }
 
-            FileOutputStream(keyStoreFile).use { fos ->
-                keyStore.store(fos, KEYSTORE_PASSWORD.toCharArray())
+                // Reload from disk so every instance uses the exact same CA.
+                keyStoreFile.inputStream().use { fis ->
+                    keyStore.load(fis, KEYSTORE_PASSWORD.toCharArray())
+                }
+                caCert = keyStore.getCertificate(CA_ALIAS) as X509Certificate
+                caPrivateKey = keyStore.getKey(CA_ALIAS, KEYSTORE_PASSWORD.toCharArray()) as PrivateKey
             }
         }
 
@@ -394,5 +402,6 @@ class CertificateManager(private val context: Context) {
         private const val TAG = "CertificateManager"
         private const val KEYSTORE_PASSWORD = "httpinterceptor"
         private const val CA_ALIAS = "http_interceptor_ca"
+        private val INIT_LOCK = Any()
     }
 }
