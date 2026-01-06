@@ -275,6 +275,13 @@ class ProxyService : Service() {
             this, 10, batteryIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+
+        val certPi = PendingIntent.getActivity(
+            this,
+            12,
+            Intent(this, com.httpinterceptor.ui.CertInstallActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HTTP Interceptor")
@@ -282,6 +289,7 @@ class ProxyService : Service() {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
             .addAction(android.R.drawable.ic_menu_manage, "Batería", batteryPi)
+            .addAction(android.R.drawable.ic_secure, "Instalar CA", certPi)
             .setOngoing(true)
             .build()
     }

@@ -170,12 +170,20 @@ class WebServerService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val certPi = PendingIntent.getActivity(
+            this,
+            13,
+            Intent(this, com.httpinterceptor.ui.CertInstallActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("RoRo Interceptor - Web UI")
             .setContentText(message)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(openApp)
             .addAction(android.R.drawable.ic_menu_manage, "Batería", batteryPi)
+            .addAction(android.R.drawable.ic_secure, "Instalar CA", certPi)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
@@ -345,10 +353,22 @@ class WebServer(
     }
 
     private fun handleCertStatus(): Response {
+        val fp = try {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val digest = md.digest(certManager.getCACertificate().encoded)
+            digest.joinToString(":") { b -> "%02X".format(b) }
+        } catch (_: Exception) {
+            ""
+        }
+
+        val ca = certManager.getCACertificate()
         val response = JSONObject().apply {
             put("installed", certManager.isCertificateInstalled())
             put("shouldReinstall", certManager.shouldReinstallCertificate())
             put("name", "RoRo Interceptor Root CA")
+            put("sha256", fp)
+            put("subject", ca.subjectX500Principal?.name ?: "")
+            put("notAfter", ca.notAfter?.time ?: 0)
         }
         return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString())
     }
