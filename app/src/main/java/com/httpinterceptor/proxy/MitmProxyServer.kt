@@ -164,15 +164,35 @@ class MitmProxyServer(
             val parts = authority.split(":")
             targetHost = parts[0]
             targetPort = parts.getOrNull(1)?.toIntOrNull() ?: 443
-            
+
             listener.onLog("[$requestId] CONNECT $targetHost:$targetPort", "CONNECT")
-            
+
+            // Record CONNECT as a request so the dashboard isn't empty when TLS fails before HTTP.
+            try {
+                val headers = mutableMapOf<String, String>()
+                request.headers().forEach { headers[it.key] = it.value }
+                val id = requestId.toLongOrNull() ?: requestCounter.incrementAndGet()
+                listener.onRequestReceived(
+                    com.httpinterceptor.model.HttpRequest(
+                        id = id,
+                        timestamp = System.currentTimeMillis(),
+                        method = "CONNECT",
+                        url = "https://${targetHost}:${targetPort}",
+                        host = targetHost ?: "",
+                        path = authority,
+                        headers = headers,
+                        body = null
+                    )
+                )
+            } catch (_: Exception) {
+            }
+
             val response = DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1,
                 HttpResponseStatus(200, "Connection Established")
             )
             response.headers().set(HttpHeaderNames.CONNECTION, "keep-alive")
-            
+
             ctx.writeAndFlush(response).addListener(ChannelFutureListener { future ->
                 if (future.isSuccess) {
                     try {
